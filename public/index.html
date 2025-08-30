@@ -1,0 +1,59 @@
+<!doctype html><html><head><meta charset="utf-8"><title>PhotoLab</title></head>
+<body>
+<h1>PhotoLab</h1>
+<p>v2 with validation, rate limit, logging, error envelopes</p>
+<section id="login">
+    <input id="user" placeholder="username" value="alice">
+    <input id="pass" type="password" placeholder="password" value="test123">
+    <button onclick="login()">Login</button>
+    <pre id="who"></pre>
+</section>
+<section id="upload" style="display:none">
+    <input type="file" id="file">
+    <button onclick="upload()">Upload</button>
+    <pre id="asset"></pre>
+</section>
+<section id="process" style="display:none">
+    <label>iterations <input id="it" type=number value="8"></label>
+    <label>variants <input id="var" type="number" value="3"></label>
+    <button onclick="processJob()">Start</button>
+    <pre id="job"></pre>
+</section>
+<script>
+    let token = null, assetId=null;
+    async function login() {
+        const r=await fetch('/api/v1/auth/login', {
+            method: 'POST',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({
+            username: document.getElementById('user').value,
+            password: document.getElementById('pass').value
+        })});
+        const j=await r.json(); token=j.data.token; document.getElementById('who').textContent=JSON.stringify(j,null,2);
+        document.getElementById('upload').style.display='block';
+    }
+    async function upload() {
+        const f=document.getElementById('file').files[0];
+        const fd=new FormData(); fd.append('file', f);
+        const r=await fetch('/api/v1/assets', {
+            method: 'POST',
+            headers:{'Authorization':'Bearer '+token},
+            body:fd});
+        const j=await r.json(); assetId=j.data.id; document.getElementById('asset').textContent=JSON.stringify(j,null,2);
+        document.getElementById('process').style.display='block';
+    }
+    async function processJob() {
+        const body = {
+            assetId,
+            iterations: +document.getElementById('it').value,
+            variants: +document.getElementById('var').value
+        };
+        const r=await fetch('/api/v1/jobs', {
+            method: 'POST',
+            headers:{'Content-Type':'application/json', Authorization:'Bearer '+token},
+            body:JSON.stringify(body)});
+        document.getElementById('job').textContent=JSON.stringify(await r.json(),null,2);
+    };
+</script>
+</body>
+</html>

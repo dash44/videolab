@@ -1,0 +1,14 @@
+services:
+  photolab:
+    build: .
+    image: photolab:2.0
+    ports: ["8080:8080"]
+    environment:
+      - NODE_ENV=production
+      - PORT=8080
+      - JWT_SECRET=${JWT_SECRET:-supersecret}
+      - LOG_LEVEL=info
+    volumes:
+      - ./uploads:app/uploads
+      - ./outputs:/app/outputs
+
