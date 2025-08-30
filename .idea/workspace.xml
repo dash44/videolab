@@ -98,7 +98,7 @@
       <workItem from="1756518768110" duration="82000" />
       <workItem from="1756518875237" duration="296000" />
       <workItem from="1756519250428" duration="24000" />
-      <workItem from="1756519283955" duration="3967000" />
+      <workItem from="1756519283955" duration="9951000" />
     </task>
     <task id="LOCAL-00001" summary="config.js">
       <option name="closed" value="true" />
@@ -156,7 +156,79 @@
       <option name="project" value="LOCAL" />
       <updated>1756529574461</updated>
     </task>
-    <option name="localTasksCounter" value="8" />
+    <task id="LOCAL-00008" summary="validate.js - need to add body fields">
+      <option name="closed" value="true" />
+      <created>1756529648929</created>
+      <option name="number" value="00008" />
+      <option name="presentableId" value="LOCAL-00008" />
+      <option name="project" value="LOCAL" />
+      <updated>1756529648929</updated>
+    </task>
+    <task id="LOCAL-00009" summary="auth.schema.js">
+      <option name="closed" value="true" />
+      <created>1756529744319</created>
+      <option name="number" value="00009" />
+      <option name="presentableId" value="LOCAL-00009" />
+      <option name="project" value="LOCAL" />
+      <updated>1756529744319</updated>
+    </task>
+    <task id="LOCAL-00010" summary="assets.schema.js - TODO: add body fields">
+      <option name="closed" value="true" />
+      <created>1756529821248</created>
+      <option name="number" value="00010" />
+      <option name="presentableId" value="LOCAL-00010" />
+      <option name="project" value="LOCAL" />
+      <updated>1756529821248</updated>
+    </task>
+    <task id="LOCAL-00011" summary="jobs.schema.js">
+      <option name="closed" value="true" />
+      <created>1756530100707</created>
+      <option name="number" value="00011" />
+      <option name="presentableId" value="LOCAL-00011" />
+      <option name="project" value="LOCAL" />
+      <updated>1756530100707</updated>
+    </task>
+    <task id="LOCAL-00012" summary="image.service.js">
+      <option name="closed" value="true" />
+      <created>1756530535060</created>
+      <option name="number" value="00012" />
+      <option name="presentableId" value="LOCAL-00012" />
+      <option name="project" value="LOCAL" />
+      <updated>1756530535060</updated>
+    </task>
+    <task id="LOCAL-00013" summary="auth.controller.js">
+      <option name="closed" value="true" />
+      <created>1756530779999</created>
+      <option name="number" value="00013" />
+      <option name="presentableId" value="LOCAL-00013" />
+      <option name="project" value="LOCAL" />
+      <updated>1756530779999</updated>
+    </task>
+    <task id="LOCAL-00014" summary="assets.controller.js">
+      <option name="closed" value="true" />
+      <created>1756534536010</created>
+      <option name="number" value="00014" />
+      <option name="presentableId" value="LOCAL-00014" />
+      <option name="project" value="LOCAL" />
+      <updated>1756534536010</updated>
+    </task>
+    <task id="LOCAL-00015" summary="jobs.controller.js">
+      <option name="closed" value="true" />
+      <created>1756538064179</created>
+      <option name="number" value="00015" />
+      <option name="presentableId" value="LOCAL-00015" />
+      <option name="project" value="LOCAL" />
+      <updated>1756538064179</updated>
+    </task>
+    <task id="LOCAL-00016" summary="auth.routes.js">
+      <option name="closed" value="true" />
+      <created>1756538184765</created>
+      <option name="number" value="00016" />
+      <option name="presentableId" value="LOCAL-00016" />
+      <option name="project" value="LOCAL" />
+      <updated>1756538184765</updated>
+    </task>
+    <option name="localTasksCounter" value="17" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -170,7 +242,16 @@
     <MESSAGE value="auth.js" />
     <MESSAGE value="error.js" />
     <MESSAGE value="rateLimit.js" />
-    <option name="LAST_COMMIT_MESSAGE" value="rateLimit.js" />
+    <MESSAGE value="validate.js - need to add body fields" />
+    <MESSAGE value="auth.schema.js" />
+    <MESSAGE value="assets.schema.js - TODO: add body fields" />
+    <MESSAGE value="jobs.schema.js" />
+    <MESSAGE value="image.service.js" />
+    <MESSAGE value="auth.controller.js" />
+    <MESSAGE value="assets.controller.js" />
+    <MESSAGE value="jobs.controller.js" />
+    <MESSAGE value="auth.routes.js" />
+    <option name="LAST_COMMIT_MESSAGE" value="auth.routes.js" />
   </component>
   <component name="XSLT-Support.FileAssociations.UIState">
     <expand />
