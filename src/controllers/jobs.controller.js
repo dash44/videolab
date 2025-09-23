@@ -1,9 +1,9 @@
 import fs from 'fs';
-import { nanoid } from 'nanoid';
+import { nanoid } from 'nanoid/non-secure';
 import { db } from '../db.js';
 import { ok, notfound, forbidden, fail } from '../utils/response.js'
 import { canSee } from '../middleware/auth.js'
-import { pipeline, buildOutputPath } from '../services/image.service.js';
+import { transcode, buildOutputPath } from '../services/video.service.js';
 
 export const processJob = async (req, res) => {
     const { assetId, iterations, variants } = req.body;
@@ -11,22 +11,27 @@ export const processJob = async (req, res) => {
     if(!a) return notfound(res, 'Asset not found');
     if(!canSee(a.owner, req.user)) return forbidden(res);
     const jobId = nanoid();
-    db.prepare('INSERT INTO jobs (id, assetId, owner, status, startedAt, finishedAt, outputsJson, iterations, variants) VALUES (?, ?, ?, "running",  datetime("now"), NULL, "[]", ?, ?)')
-        .run(jobId, req.user.sub, assetId, iterations, variants);
+    db.prepare(
+        `INSERT INTO jobs (id, assetId, owner, status, startedAt, finishedAt, outputsJson, variants) 
+        VALUES (?, ?, ?, 'running',  CURRENT_TIMESTAMP, NULL, '[]', ?)`)
+        .run(jobId, assetId, req.user.sub, variants);
     const outs = [];
     try {
         for (let v=1; v <= Number(variants); v++) {
-            const outPath = buildOutputPath(a.originalPath, assetId, `v${v}`);
-            const { size } = await pipeline(a.originalPath, outPath, Number(iterations));
+            const outPath = buildOutputPath(a.path || a.originalPath, assetId, `v${v}`);
+            const { size } = await transcode(a.originalPath, outPath);
             outs.push({ variant: `v${v}`, path: outPath, size });
         }
-        db.prepare('UPDATE jobs SET status ="done", finishedAt = datetime("now"), outputsJson = ? WHERE id =?')
+        db.prepare(`UPDATE jobs SET status ='done', finishedAt = CURRENT_TIMESTAMP, outputsJson = ? WHERE id =?`)
             .run(JSON.stringify(outs), jobId);
         return ok(res, { jobId, status: 'done', outputs: outs });
     } catch (e) {
-        db.prepare('UPDATE jobs SET status ="error", finishedAt = datetime("now") WHERE id =?')
+        console.log(`ERROR during transcoding:`, e);
+        db.prepare(`UPDATE jobs SET status ='error', finishedAt = CURRENT_TIMESTAMP WHERE id =?`)
             .run(jobId);
         return fail(res, 'processing failed');
+        console.log(`Processing variant ${v}, output path: ${outPath}`);
+
     }
 };
 
@@ -44,11 +49,12 @@ export const getJob = (req, res) => {
         .get(req.params.id);
     if (!r) return notfound(res);
     if (!canSee(r.owner, req.user)) return forbidden(res);
-    r.outputsJson = JSON.parse(r.outputsJson); delete r.outputsJson;
+    r.outputsJson = JSON.parse(r.outputsJson);
+    delete r.outputsJson;
     return ok(res, r);
 };
 
-export connst downloadVariant = (req, res) => {
+export const downloadVariant = (req, res) => {
     const { assetId } = req.params; const { variant='v1' } = req.query;
     const a = db.prepare('SELECT * FROM assets WHERE id =?').get(assetId);
     if (!a) return notfound(res, 'Asset not found');

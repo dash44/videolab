@@ -12,6 +12,13 @@
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
     <option name="LAST_RESOLUTION" value="IGNORE" />
   </component>
+  <component name="FileTemplateManagerImpl">
+    <option name="RECENT_TEMPLATES">
+      <list>
+        <option value="JavaScript File" />
+      </list>
+    </option>
+  </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
@@ -38,12 +45,13 @@
   <component name="PropertiesComponent"><![CDATA[{
   "keyToString": {
     "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "Node.js.app.js.executor": "Run",
     "RunOnceActivity.ShowReadmeOnStart": "true",
     "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
     "RunOnceActivity.git.unshallow": "true",
     "git-widget-placeholder": "main",
     "kotlin-language-version-configured": "true",
-    "last_opened_file_path": "/Users/dashanaumova/Desktop/uni/2025 sem 2/CAB432/photolab",
+    "last_opened_file_path": "/Users/dashanaumova/Desktop/uni/2025 sem 2/CAB432/videolab/videolab",
     "node.js.detected.package.eslint": "true",
     "node.js.detected.package.tslint": "true",
     "node.js.selected.package.eslint": "(autodetect)",
@@ -64,19 +72,6 @@
     ]
   }
 }]]></component>
-  <component name="RunManager">
-    <configuration default="true" type="JetRunConfigurationType">
-      <module name="photolab" />
-      <method v="2">
-        <option name="Make" enabled="true" />
-      </method>
-    </configuration>
-    <configuration default="true" type="KotlinStandaloneScriptRunConfigurationType">
-      <module name="photolab" />
-      <option name="filePath" />
-      <method v="2" />
-    </configuration>
-  </component>
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
@@ -98,7 +93,9 @@
       <workItem from="1756518768110" duration="82000" />
       <workItem from="1756518875237" duration="296000" />
       <workItem from="1756519250428" duration="24000" />
-      <workItem from="1756519283955" duration="10811000" />
+      <workItem from="1756519283955" duration="23889000" />
+      <workItem from="1756597608139" duration="18742000" />
+      <workItem from="1756624286750" duration="14159000" />
     </task>
     <task id="LOCAL-00001" summary="config.js">
       <option name="closed" value="true" />
@@ -252,7 +249,39 @@
       <option name="project" value="LOCAL" />
       <updated>1756539221862</updated>
     </task>
-    <option name="localTasksCounter" value="20" />
+    <task id="LOCAL-00020" summary="server.js">
+      <option name="closed" value="true" />
+      <created>1756539721838</created>
+      <option name="number" value="00020" />
+      <option name="presentableId" value="LOCAL-00020" />
+      <option name="project" value="LOCAL" />
+      <updated>1756539721838</updated>
+    </task>
+    <task id="LOCAL-00021" summary="removed v2">
+      <option name="closed" value="true" />
+      <created>1756539864436</created>
+      <option name="number" value="00021" />
+      <option name="presentableId" value="LOCAL-00021" />
+      <option name="project" value="LOCAL" />
+      <updated>1756539864436</updated>
+    </task>
+    <task id="LOCAL-00022" summary="fixed comma issues">
+      <option name="closed" value="true" />
+      <created>1756539933697</created>
+      <option name="number" value="00022" />
+      <option name="presentableId" value="LOCAL-00022" />
+      <option name="project" value="LOCAL" />
+      <updated>1756539933697</updated>
+    </task>
+    <task id="LOCAL-00023" summary="fixed spelling mistake">
+      <option name="closed" value="true" />
+      <created>1756540105290</created>
+      <option name="number" value="00023" />
+      <option name="presentableId" value="LOCAL-00023" />
+      <option name="project" value="LOCAL" />
+      <updated>1756540105290</updated>
+    </task>
+    <option name="localTasksCounter" value="24" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -278,7 +307,11 @@
     <MESSAGE value="assets.routes.js" />
     <MESSAGE value="jobs.routes.js" />
     <MESSAGE value="index.js" />
-    <option name="LAST_COMMIT_MESSAGE" value="index.js" />
+    <MESSAGE value="server.js" />
+    <MESSAGE value="removed v2" />
+    <MESSAGE value="fixed comma issues" />
+    <MESSAGE value="fixed spelling mistake" />
+    <option name="LAST_COMMIT_MESSAGE" value="fixed spelling mistake" />
   </component>
   <component name="XSLT-Support.FileAssociations.UIState">
     <expand />

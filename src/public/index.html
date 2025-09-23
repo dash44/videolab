@@ -1,0 +1,141 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>VideoLab</title>
+    <style>
+        body {
+            font-family: system-ui, sans-serif;
+            max-width: 800px;
+            margin: 2rem auto;
+            background: #fafafa;
+            padding: 1rem;
+        }
+
+        h1, h2 {
+            color: #333;
+        }
+
+        section {
+            border: 1px solid #ccc;
+            padding: 1rem 1.5rem;
+            border-radius: 10px;
+            margin-bottom: 2rem;
+            background: #fff;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.03);
+        }
+
+        input, select, button {
+            padding: 0.5rem 0.75rem;
+            margin-top: 0.25rem;
+            margin-right: 0.5rem;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+            font-size: 1rem;
+        }
+
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        .muted {
+            color: #666;
+            font-size: 0.9rem;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        #preview img,
+        #preview video,
+        #uploadPreview img,
+        #uploadPreview video {
+            max-width: 100%;
+            margin-top: 1rem;
+            border-radius: 8px;
+            border: 1px solid #ddd;
+        }
+
+        #err {
+            font-size: 1rem;
+            margin-top: 1rem;
+            white-space: pre-wrap;
+            color: red;
+            font-weight: bold;
+        }
+
+        #status {
+            padding: 0.5rem;
+            font-weight: bold;
+            margin-top: 1rem;
+        }
+
+        #status.ok {
+            color: green;
+        }
+
+        #status.error {
+            color: red;
+        }
+
+        #status.info {
+            color: #555;
+        }
+    </style>
+
+</head>
+<body>
+<h1>🎬 VideoLab</h1>
+<small id="stamp"></small>
+
+<section id="login">
+    <h2>Login</h2>
+    <input id="user" placeholder="Username" value="alice" />
+    <input id="pass" placeholder="Password" value="test123" type="password" />
+    <button id="btnLogin">Login</button>
+    <pre id="who" class="muted"></pre>
+</section>
+
+<section id="upload" class="hidden">
+    <h2>Upload Video</h2>
+    <input type="file" id="file" accept="video/*,image/*" />
+    <button id="btnUpload">Upload</button>
+    <div id="uploadPreview" class="muted"></div>
+    <pre id="asset" class="muted"></pre>
+</section>
+
+<section id="process" class="hidden">
+    <h2>Transcode Options</h2>
+    <div id="processNote" class="muted">Choose output settings:</div>
+    <div style="margin-top: 0.5rem;">
+        <label for="var">Number of Variants:</label>
+        <input id="var" type="number" value="2" min="1" style="width: 60px;" />
+    </div>
+    <div style="margin-top: 0.5rem;">
+        <label for="format">Output Format:</label>
+        <select id="format">
+            <option value="mp4">MP4 (H.264)</option>
+            <option value="webm">WebM (VP8)</option>
+            <option value="mov">MOV</option>
+        </select>
+    </div>
+    <button id="btnProcess" style="margin-top: 1rem;">Start Processing</button>
+    <pre id="job" class="muted"></pre>
+    <div id="preview" class="muted"></div>
+    <div id="status" class="muted"></div>
+</section>
+
+<pre id="err" style="color: red; font-weight: bold;"></pre>
+
+
+<script src="/app.js"></script>
+</body>
+</html>

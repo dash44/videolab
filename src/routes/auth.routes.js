@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { body } from 'celebrate';
+import { body } from '../middleware/validate.js';
 import { login } from '../controllers/auth.controller.js';
 import { loginSchema } from '../schemas/auth.schema.js';
 
