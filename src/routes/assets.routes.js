@@ -1,59 +1,75 @@
 import { Router } from 'express';
-import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
-import { auth } from '../middleware/auth.js';
+
+import { createUploadUrl } from '../services/storage.js';
+import { VideoRepo } from '../aws/dynamo.js';
 import * as ctrl from '../controllers/assets.controller.js';
+
+import { auth } from '../middleware/auth.js';
+import { authCognito } from '../middleware/authCognito.js';
+const guard = process.env.AUTH_MODE === "cognito" ? authCognito() : auth();
+// ^^ switches auth method based on availability 
 
 const router = Router();
 
-// Ensure upload directory exists
-const uploadDir = path.join(process.cwd(), 'uploads');
-
-console.log("Upload directory is:", uploadDir);
-
-fs.mkdirSync(uploadDir, { recursive: true });
-
-try {
-    fs.accessSync(uploadDir, fs.constants.W_OK);
-    console.log("Upload directory is writable ✅");
-} catch (err) {
-    console.error("Upload directory is NOT writable ❌", err);
-}
-
-
-// Store to disk; keep original name (controller uses the saved path)
-const storage = multer.diskStorage({
-    destination: (_, __, cb) => cb(null, uploadDir),
-    filename: (_, file, cb) => cb(null, `${Date.now()}-${file.originalname}`)
-});
-
-// Accept images/videos only; set a generous limit (adjust if needed)
-const upload = multer({
-    storage,
-    limits: { fileSize: 1024 * 1024 * 1024 }, // 1GB
-    fileFilter: (_, file, cb) => {
-        const ok = file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/');
-        cb(ok ? null : new Error('Only images or videos are allowed'), ok);
-    }
-});
 
 router.get('/', auth, ctrl.listAssets);
 router.get('/:id', auth, ctrl.getAsset);
-router.post(
-    '/',
-    auth(),
-    (req, res, next) => {
-        upload.single('file')(req, res, function (err) {
-            if (err) {
-                console.error("MULTER ERROR:", err);
-                return res.status(400).json({ success: false, error: { message: err.message } });
-            }
-            ctrl.upload(req, res, next);
+
+router.post("/presign-upload", guard, async (req, res) => {
+    try {
+        const { filename, contentType } = req.body || {};
+        if (!filename || !contentType) {
+            return res.status(400).json({ sucess: false, error: { message: "filename and contentType required!!!!" } });
+        }
+
+        const ownerSub = req.user?.sub || "unknown";
+        const assetId = crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        const key = `uploads/${ownerSub}/${Date.now()}-${filename}`;
+
+        // Presign a PUT URL for direct browser upload to s3
+        const url = await createUploadUrl({
+            bucket: process.env.BUCKET_UPLOADS,
+            key,
+            contentType,
+            expiresSeconds: 900
         });
+
+        await VideoRepo.put({
+            assetId,
+            ownerSub,
+            filename,
+            mime: contentType,
+            sizeBytes: 0,
+            createdAt: new Date().toISOString(),
+            status: [{ key }],
+            outputs: []
+        });
+
+        return res.json({ sucess: true, url, key, assetId });
+    } catch (err) {
+        console.error("PRESIGN UPLOAD ERROR:", err);
+        return res.status(500).json({ success: false, error: { message: err.message } });
     }
-);
+});
 
+router.get("/presign-download", guard, async (req, res) => {
+    try {
+        const key = req.query.key;
+        if (!key) return res.status(400).json({ sucess: false, error: { message: "KEY QUERY PARAM REQUIRED!!!!" } });
 
+        const url = await createDownloadUrl({
+            bucket: process.env.BUCKET_OUTPUTS,
+            key, 
+            expiresSeconds: 900
+        });
+
+        return res.json({ sucess: true, url });
+    } catch (err) {
+        console.error("PRESIGN DOWNLOAD ERROR:", err);
+        return res.status(500).json({ success: false, error: { message: err.message } });
+    }
+});
 
 export default router;
