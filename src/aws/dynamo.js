@@ -12,7 +12,8 @@ const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({ region }));
 
 export const tables = {
     videos: process.env.DDB_TABLE_VIDEOS || "VideosTable",
-    jobs: process.env.DDB_TABLE_JOBS || "JobsTable"
+    jobs: process.env.DDB_TABLE_JOBS || "JobsTable",
+    users: process.env.DDB_TABLE_USERS || "UsersTable"
 };
 
 export const VideoRepo = {
@@ -77,4 +78,45 @@ export const JobRepo = {
             sets.push(`${nameKey} = ${valueKey}`);
         })
     }
+};
+
+export const UserRepo = {
+  // Save a new user
+  put: async (user) => {
+    const cmd = new PutCommand({
+      TableName: TABLE,
+      Item: user,
+      ConditionExpression: "attribute_not_exists(username)", // avoid overwriting
+    });
+    await ddb.send(cmd);
+    return user;
+  },
+
+  // Get user by username
+  get: async (username) => {
+    const cmd = new GetCommand({
+      TableName: TABLE,
+      Key: { username },
+    });
+    const res = await ddb.send(cmd);
+    return res.Item;
+  },
+
+  // Confirm user by setting confirmed=true and clearing confirmationCode
+  confirm: async (username, code) => {
+    const cmd = new UpdateCommand({
+      TableName: TABLE,
+      Key: { username },
+      UpdateExpression: "SET confirmed = :c, confirmationCode = :null",
+      ConditionExpression: "confirmationCode = :code",
+      ExpressionAttributeValues: {
+        ":c": true,
+        ":null": null,
+        ":code": code,
+      },
+      ReturnValues: "ALL_NEW",
+    });
+    const res = await ddb.send(cmd);
+    return res.Attributes;
+  },
 };

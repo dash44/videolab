@@ -1,10 +1,12 @@
 import { Router } from 'express';
-import { body } from '../middleware/validate.js';
-import { login } from '../controllers/auth.controller.js';
-import { loginSchema } from '../schemas/auth.schema.js';
+import { register, confirm, login } from '../controllers/auth.controller.js';
+import { registerSchema, loginSchema } from '../schemas/auth.schema.js';
+import { validate } from '../middleware/validate.js';
 
 const r = Router();
 
-r.post('/login', body(loginSchema), login);
+r.post('/register', registerSchema, validate, register);
+r.get('/confirm/:token', confirm);
+r.post('/login', loginSchema, validate, login);
 
 export default r;

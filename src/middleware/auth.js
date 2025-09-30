@@ -1,23 +1,29 @@
 import jwt from 'jsonwebtoken';
 import { config } from '../config.js';
-import {unauthorized, forbidden} from '../utils/response.js'
-export const USERS = [
-    { username:'admin', password:'admin123', role:'admin' },
-    { username:'alice', password:'test123', role:'user' }
-    ];
-export const issue = (u) =>
-    jwt.sign({ sub:u.username, role:u.role }, config.jwtSecret, { expiresIn: '2h' });
+import { unauthorized, forbidden } from '../utils/response.js';
 
-export const auth = (roles=[]) => (req, res, next) => {
-    const h = req.headers.authorization || '';
-    const t=h.startsWith('Bearer ')?h.slice(7) : '';
-    try{
-        const p = jwt.verify(t, config.jwtSecret);
-        if (roles.length && !roles.includes(p.role)) return forbidden(res);
-        req.user = p;
-        next();
-    }catch{
-        return unauthorized(res);
-    };
+export const issue = (user) =>
+  jwt.sign({ sub: user.username, role: user.role }, config.jwtSecret, { expiresIn: '2h' });
+
+export const auth = (roles = []) => (req, res, next) => {
+  const header = req.headers.authorization || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : '';
+
+  if (!token) return unauthorized(res);
+
+  try {
+    const payload = jwt.verify(token, config.jwtSecret);
+    if (roles.length && !roles.includes(payload.role)) {
+      return forbidden(res);
+    }
+    req.user = payload;
+    next();
+  } catch (err) {
+    console.error("Auth error:", err.message);
+    return unauthorized(res);
+  }
 };
-export const canSee = (owner, u) => u.role === 'admin' || u.sub === owner;
+
+
+export const canSee = (owner, user) =>
+  user.role === 'admin' || user.sub === owner;
