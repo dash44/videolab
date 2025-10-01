@@ -96,9 +96,9 @@ export const login = async (req, res) => {
     const ar = authResp.AuthenticationResult;
     if (!ar) return error(res, "Login failed", 401);
 
-    return success(res, "Login successful", {
-      accessToken: ar.AccessToken,
+    return success(res, {
       idToken: ar.IdToken,
+      accessToken: ar.AccessToken,
       refreshToken: ar.RefreshToken,
       expiresIn: ar.ExpiresIn,
     });
