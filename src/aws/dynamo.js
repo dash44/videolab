@@ -37,7 +37,7 @@ export const VideoRepo = {
             })
         ),
     
-    updateOutputs: (asstId, output, status) =>
+    updateOutputs: (assetId, output, status) =>
         ddb.send(
             new UpdateCommand({
                 TableName: tables.videos,
@@ -84,7 +84,7 @@ export const UserRepo = {
   // Save a new user
   put: async (user) => {
     const cmd = new PutCommand({
-      TableName: TABLE,
+      TableName: tables.users,
       Item: user,
       ConditionExpression: "attribute_not_exists(username)", // avoid overwriting
     });
@@ -95,7 +95,7 @@ export const UserRepo = {
   // Get user by username
   get: async (username) => {
     const cmd = new GetCommand({
-      TableName: TABLE,
+      TableName: tables.users,
       Key: { username },
     });
     const res = await ddb.send(cmd);
@@ -105,7 +105,7 @@ export const UserRepo = {
   // Confirm user by setting confirmed=true and clearing confirmationCode
   confirm: async (username, code) => {
     const cmd = new UpdateCommand({
-      TableName: TABLE,
+      TableName: tables.users,
       Key: { username },
       UpdateExpression: "SET confirmed = :c, confirmationCode = :null",
       ConditionExpression: "confirmationCode = :code",

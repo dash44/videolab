@@ -1,4 +1,4 @@
-import { presignPut, presignGet } from "../aws/s3";
+import { presignPut, presignGet } from "../aws/s3.js";
 
 /**
  * IMPORTANT: client must use same Content Type header used here

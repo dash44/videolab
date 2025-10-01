@@ -4,7 +4,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 const region = process.env.AWS_REGION || "ap-southeast-2";
 export const s3 = new S3Client({ region });
 
-export async function presignPut({ bucket, key, expiresSeconds = 900 }) {
+export async function presignPut({ bucket, key, contentType, expiresSeconds = 900 }) {
     const cmd = new PutObjectCommand({ 
         Bucket: bucket, 
         Key: key,
