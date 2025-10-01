@@ -125,6 +125,7 @@
   </div>
 
   <script>
+    const AFTER_LOGIN = './app.js';
     // same-origin API base
     const API = "";
     // tabs
@@ -191,15 +192,19 @@
         const username = $('login-username').value.trim();
         const password = $('login-password').value;
         try {
-            const r = await post('/cog/login', { username, password });
+            const r  = await post('/cog/login', { username, password });
             const id = r?.data?.idToken || r?.meta?.idToken || r?.idToken;
             if (!id) throw new Error('No idToken from server');
+
             localStorage.setItem('idToken', id);
             setStatus();
             show('login-msg', 'Login ok', true);
+
+            // redirect
+            window.location.replace(AFTER_LOGIN);
         } catch (e) {
             show('login-msg', 'Error: ' + e.message);
-            }   
+        }
     });
 
 
