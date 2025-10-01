@@ -1,42 +1,45 @@
 import { createClient } from 'redis';
 
-const PREFIX = (process.env.REDIS_PREFIX || "videolab" ) + ":";
+const PREFIX = (process.env.REDIS_PREFIX || 'videolab') + ':';
 
-function buildClient() {
-    if (process.env.REDIS_URL) return createClient({ url: process.env.REDIS_URL });
+export const redis = createClient(process.env.REDIS_URL ? { url: process.env.REDIS_URL } : {
+  socket: {
+    host: process.env.REDIS_HOST || 'localhost',
+    port: Number(process.env.REDIS_PORT || 6379),
+    tls: process.env.REDIS_TLS === 'true' || Number(process.env.REDIS_PORT || 6379) === 6380 ? {} : undefined
+  }
+});
 
-    const host = process.env.REDIS_HOST || "localhost";
-    const port = Number(process.env.REDIS_PORT || 6379);
-    const tls = process.env.REDIS_TLS === "true" || port === 6380;
+redis.on('error', (err) => {
+  // eslint-disable-next-line no-console
+  console.error('Redis error', err?.message || err);
+});
 
-    return createClient({ 
-        socket: { host, port, tls, servername: tls ? host : undefined } 
-    });
+let connected = false;
+export async function ensureRedis() {
+  if (!connected) {
+    await redis.connect();
+    connected = true;
+  }
 }
 
-export const redis = buildClient();
-
-redis.on("error", (err) => console.error("refis error", err));
-
-export async function initRedis() {
-    if (redis.isOpen) await redis.quit();
-}
-
-const k = (key) => (key.startsWith(PREFIX) ? key : PREFIX + key);
+const k = (key) => PREFIX + key;
 
 export async function cacheGet(key) {
-    return redis.get(k(key));
+  await ensureRedis();
+  return redis.get(k(key));
 }
 
 export async function cacheSet(key, value, ttlSec = 60) {
-    return redis.set(k(key), value, { EX: ttlSec });
+  await ensureRedis();
+  return redis.set(k(key), value, { EX: ttlSec });
 }
 
-export async function cacheJGet (key) {
-    const v = await cacheGet(key);
-    return v ? JSON>parse(v) : null;
+export async function cacheJGet(key) {
+  const v = await cacheGet(key);
+  return v ? JSON.parse(v) : null;
 }
 
 export async function cacheJSet(key, obj, ttlSec = 60) {
-    return cacheSet(key, JSON.stringify(obj), ttlSec);
+  return cacheSet(key, JSON.stringify(obj), ttlSec);
 }

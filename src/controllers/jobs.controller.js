@@ -1,15 +1,15 @@
 import { nanoid } from "nanoid/non-secure";
 import { JobRepo, VideoRepo } from "../aws/dynamo.js";
 import { presignPut, presignGet } from "../aws/s3.js";
-import { ok, notfound, forbidden } from "../utils/response.js";
+import { ok, notfound, forbidden, bad } from "../utils/response.js";
 import { canSee } from "../middleware/auth.js";
+import { buildOutputKey } from "../services/video.service.js";
 
-const BUCKET = process.env.S3_BUCKET;
-
+const BUCKET = process.env.S3_BUCKET || "videolab-uploads";
 
 export const processJob = async (req, res) => {
   const { assetId, variants } = req.body;
-
+  if (!assetId) return bad(res, "assetId required");
   const asset = await VideoRepo.get(assetId);
   if (!asset?.Item) return notfound(res, "Asset not found");
   if (!canSee(asset.Item.ownerSub, req.user)) return forbidden(res);
