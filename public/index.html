@@ -1,141 +1,218 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
-    <meta charset="utf-8" />
-    <title>VideoLab</title>
-    <style>
-        body {
-            font-family: system-ui, sans-serif;
-            max-width: 800px;
-            margin: 2rem auto;
-            background: #fafafa;
-            padding: 1rem;
-        }
-
-        h1, h2 {
-            color: #333;
-        }
-
-        section {
-            border: 1px solid #ccc;
-            padding: 1rem 1.5rem;
-            border-radius: 10px;
-            margin-bottom: 2rem;
-            background: #fff;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.03);
-        }
-
-        input, select, button {
-            padding: 0.5rem 0.75rem;
-            margin-top: 0.25rem;
-            margin-right: 0.5rem;
-            border-radius: 5px;
-            border: 1px solid #ccc;
-            font-size: 1rem;
-        }
-
-        button {
-            background-color: #007bff;
-            color: white;
-            border: none;
-            cursor: pointer;
-        }
-
-        button:hover {
-            background-color: #0056b3;
-        }
-
-        .muted {
-            color: #666;
-            font-size: 0.9rem;
-        }
-
-        .hidden {
-            display: none;
-        }
-
-        #preview img,
-        #preview video,
-        #uploadPreview img,
-        #uploadPreview video {
-            max-width: 100%;
-            margin-top: 1rem;
-            border-radius: 8px;
-            border: 1px solid #ddd;
-        }
-
-        #err {
-            font-size: 1rem;
-            margin-top: 1rem;
-            white-space: pre-wrap;
-            color: red;
-            font-weight: bold;
-        }
-
-        #status {
-            padding: 0.5rem;
-            font-weight: bold;
-            margin-top: 1rem;
-        }
-
-        #status.ok {
-            color: green;
-        }
-
-        #status.error {
-            color: red;
-        }
-
-        #status.info {
-            color: #555;
-        }
-    </style>
-
+  <meta charset="utf-8" />
+  <title>VideoLab</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root { --bg:#0b0c10; --card:#15171c; --text:#e8eaf0; --muted:#9aa3b2; --accent:#2d6cdf; --danger:#e5484d; }
+    * { box-sizing: border-box; }
+    body { margin:0; font:16px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:var(--bg); color:var(--text); }
+    .wrap { max-width:960px; margin:40px auto; padding:0 16px; }
+    header { display:flex; align-items:center; gap:12px; margin-bottom:24px; }
+    header h1 { margin:0; font-size:28px; letter-spacing:.3px; }
+    .badge { font-size:12px; color:var(--muted); }
+    .card { background:var(--card); border:1px solid #23252b; border-radius:14px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,.35); }
+    .row { display:flex; gap:10px; align-items:center; }
+    .field { display:flex; flex-direction:column; gap:6px; flex:1; }
+    label { color:var(--muted); font-size:13px; }
+    input { width:100%; padding:10px 12px; border:1px solid #2a2e36; border-radius:10px; background:#0e1014; color:var(--text); outline:none; }
+    input:focus { border-color:#3b4252; }
+    button { padding:10px 16px; border:1px solid #2a2e36; background:var(--accent); color:white; border-radius:10px; cursor:pointer; }
+    button.ghost { background:transparent; color:var(--text); }
+    .tabs { display:flex; gap:10px; margin-bottom:12px; }
+    .tab { padding:8px 12px; border:1px solid #2a2e36; border-radius:999px; color:var(--muted); cursor:pointer; }
+    .tab.active { color:white; border-color:var(--accent); background:rgba(45,108,223,.15); }
+    .stack { display:none; }
+    .stack.active { display:block; }
+    .msg { margin-top:12px; font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space:pre-wrap; }
+    .msg.error { color:var(--danger); }
+    .msg.ok { color:#5ac8a2; }
+    .small { font-size:13px; color:var(--muted); }
+  </style>
 </head>
 <body>
-<h1>🎬 VideoLab</h1>
-<small id="stamp"></small>
+  <div class="wrap">
+    <header>
+      <svg width="30" height="30" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 6h16a2 2 0 0 1 2 2v1H2V8a2 2 0 0 1 2-2Zm-2 7h20v3a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-3Zm5-9 2 3H5l2-3Zm4 0 2 3h-4l2-3Zm4 0 2 3h-4l2-3Z"/></svg>
+      <h1>VideoLab</h1>
+      <span class="badge" id="build">build: <span id="buildAt"></span></span>
+    </header>
 
-<section id="login">
-    <h2>Login</h2>
-    <input id="user" placeholder="Username" value="alice" />
-    <input id="pass" placeholder="Password" value="test123" type="password" />
-    <button id="btnLogin">Login</button>
-    <pre id="who" class="muted"></pre>
-</section>
+    <div class="card">
+      <div class="tabs">
+        <div class="tab active" data-tab="login">Login</div>
+        <div class="tab" data-tab="signup">Sign up</div>
+        <div class="tab" data-tab="confirm">Confirm email</div>
+      </div>
 
-<section id="upload" class="hidden">
-    <h2>Upload Video</h2>
-    <input type="file" id="file" accept="video/*,image/*" />
-    <button id="btnUpload">Upload</button>
-    <div id="uploadPreview" class="muted"></div>
-    <pre id="asset" class="muted"></pre>
-</section>
+      <!-- LOGIN -->
+      <div class="stack active" id="panel-login">
+        <div class="row" style="margin-bottom:10px">
+          <div class="field">
+            <label>Username</label>
+            <input id="login-username" placeholder="alice"/>
+          </div>
+          <div class="field">
+            <label>Password</label>
+            <input id="login-password" type="password" placeholder="••••••••"/>
+          </div>
+          <div>
+            <label style="visibility:hidden">Login</label>
+            <button id="btn-login">Login</button>
+          </div>
+        </div>
+        <div class="small">Tip: this uses <code>/cog/login</code> and expects a Cognito app client **without secret**.</div>
+        <div class="msg" id="login-msg"></div>
+      </div>
 
-<section id="process" class="hidden">
-    <h2>Transcode Options</h2>
-    <div id="processNote" class="muted">Choose output settings:</div>
-    <div style="margin-top: 0.5rem;">
-        <label for="var">Number of Variants:</label>
-        <input id="var" type="number" value="2" min="1" style="width: 60px;" />
+      <!-- SIGNUP -->
+      <div class="stack" id="panel-signup">
+        <div class="row" style="margin-bottom:10px">
+          <div class="field">
+            <label>Username</label>
+            <input id="su-username" placeholder="alice"/>
+          </div>
+          <div class="field">
+            <label>Email</label>
+            <input id="su-email" type="email" placeholder="you@example.com"/>
+          </div>
+          <div class="field">
+            <label>Password</label>
+            <input id="su-password" type="password" placeholder="Abc12345!"/>
+          </div>
+          <div>
+            <label style="visibility:hidden">Sign up</label>
+            <button id="btn-signup">Sign up</button>
+          </div>
+        </div>
+        <div class="small">After sign up, check your email for the 6-digit code, then use “Confirm email”.</div>
+        <div class="msg" id="signup-msg"></div>
+      </div>
+
+      <!-- CONFIRM -->
+      <div class="stack" id="panel-confirm">
+        <div class="row" style="margin-bottom:10px">
+          <div class="field">
+            <label>Username</label>
+            <input id="cf-username" placeholder="alice"/>
+          </div>
+          <div class="field">
+            <label>Code</label>
+            <input id="cf-code" placeholder="123456"/>
+          </div>
+          <div>
+            <label style="visibility:hidden">Confirm</label>
+            <button id="btn-confirm">Confirm</button>
+          </div>
+        </div>
+        <div class="msg" id="confirm-msg"></div>
+      </div>
     </div>
-    <div style="margin-top: 0.5rem;">
-        <label for="format">Output Format:</label>
-        <select id="format">
-            <option value="mp4">MP4 (H.264)</option>
-            <option value="webm">WebM (VP8)</option>
-            <option value="mov">MOV</option>
-        </select>
+
+    <div class="card" style="margin-top:14px">
+      <div class="row" style="justify-content:space-between; align-items:center;">
+        <div>
+          <div class="small">Auth status:</div>
+          <div id="auth-status" class="small">Not logged in</div>
+        </div>
+        <div class="row" style="gap:8px">
+          <button class="ghost" id="btn-copy">Copy ID token</button>
+          <button class="ghost" id="btn-logout">Logout</button>
+        </div>
+      </div>
     </div>
-    <button id="btnProcess" style="margin-top: 1rem;">Start Processing</button>
-    <pre id="job" class="muted"></pre>
-    <div id="preview" class="muted"></div>
-    <div id="status" class="muted"></div>
-</section>
+  </div>
 
-<pre id="err" style="color: red; font-weight: bold;"></pre>
+  <script>
+    // same-origin API base
+    const API = "";
+    // tabs
+    document.querySelectorAll('.tab').forEach(t => {
+      t.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+        document.querySelectorAll('.stack').forEach(x => x.classList.remove('active'));
+        t.classList.add('active');
+        document.getElementById('panel-' + t.dataset.tab).classList.add('active');
+      });
+    });
 
+    // helpers
+    const $ = (id) => document.getElementById(id);
+    const show = (id, text, ok=false) => {
+      const el = $(id);
+      el.className = 'msg ' + (ok ? 'ok' : 'error');
+      el.textContent = text;
+    }
+    const setStatus = () => {
+      const tok = localStorage.getItem('idToken');
+      $('auth-status').textContent = tok ? 'Logged in (ID token stored)' : 'Not logged in';
+    }
+    const buildAt = new Date().toISOString();
+    $('buildAt').textContent = buildAt;
 
-<script src="/app.js"></script>
+    async function post(path, body) {
+      const res = await fetch(API + path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body || {})
+      });
+      const json = await res.json().catch(()=>({}));
+      if (!res.ok || json.success === false) {
+        const msg = json?.error?.message || res.statusText || 'Request failed';
+        throw new Error(msg);
+      }
+      return json;
+    }
+
+    // SIGNUP
+    $('btn-signup').addEventListener('click', async () => {
+      const username = $('su-username').value.trim();
+      const email    = $('su-email').value.trim();
+      const password = $('su-password').value;
+      try {
+        const r = await post('/cog/signup', { username, email, password });
+        show('signup-msg', 'Signup ok. Check email for code.', true);
+      } catch (e) { show('signup-msg', 'Error: ' + e.message); }
+    });
+
+    // CONFIRM
+    $('btn-confirm').addEventListener('click', async () => {
+      const username = $('cf-username').value.trim();
+      const code     = $('cf-code').value.trim();
+      try {
+        await post('/cog/confirm', { username, code });
+        show('confirm-msg', 'Email confirmed. You can login now.', true);
+      } catch (e) { show('confirm-msg', 'Error: ' + e.message); }
+    });
+
+    // LOGIN
+    $('btn-login').addEventListener('click', async () => {
+      const username = $('login-username').value.trim();
+      const password = $('login-password').value;
+      try {
+        const r = await post('/cog/login', { username, password });
+        const id = r.idToken;
+        if (!id) throw new Error('No idToken from server');
+        localStorage.setItem('idToken', id);
+        setStatus();
+        show('login-msg', 'Login ok', true);
+      } catch (e) { show('login-msg', 'Error: ' + e.message); }
+    });
+
+    // COPY / LOGOUT
+    $('btn-copy').addEventListener('click', async () => {
+      const id = localStorage.getItem('idToken') || '';
+      if (!id) return alert('No token in storage.');
+      try { await navigator.clipboard.writeText(id); alert('ID token copied'); }
+      catch { alert('Copy failed'); }
+    });
+    $('btn-logout').addEventListener('click', () => {
+      localStorage.removeItem('idToken');
+      setStatus();
+    });
+
+    setStatus();
+  </script>
 </body>
 </html>
