@@ -1,49 +1,45 @@
-import { UserRepo } from "../aws/dynamo.js";
-import bcrypt from "bcrypt";
-import crypto from "crypto";
+// src/services/signUp.js
+import {
+  signUp,
+  confirmSignUp,
+  signIn,
+  respondToMfaChallenge,
+  associateMfaApp,
+  verifyMfaApp,
+} from "../aws/cognito.js";
 
-
+// Sign up user
 export const createUser = async (username, email, password) => {
-  const hashed = await bcrypt.hash(password, 10);
-  const confirmationToken = crypto.randomUUID();
-
-  await UserRepo.put({
-    username,
-    email,
-    password: hashed,
-    role: "user",
-    confirmed: false,
-    confirmationCode: confirmationToken,
-    createdAt: new Date().toISOString()
-  });
-
-
-  return { username, email, confirmationToken };
+  const res = await signUp(username, password, email);
+  return res;
 };
 
-
+// Confirm user
 export const confirmUser = async (username, code) => {
-  const res = await UserRepo.get(username);
-  const user = res.Item;
-
-  if (!user) throw new Error("User not found");
-  if (user.confirmed) return true;
-  if (user.confirmationCode !== code) throw new Error("Invalid confirmation code");
-
-  await UserRepo.confirm(username);
-  return true;
+  const res = await confirmSignUp(username, code);
+  return res;
 };
 
-
+// Authenticate user (initial sign-in)
 export const authenticateUser = async (username, password) => {
-  const res = await UserRepo.get(username);
-  const user = res.Item;
+  const res = await signIn(username, password);
+  return res;
+};
 
-  if (!user) throw new Error("User not found");
-  if (!user.confirmed) throw new Error("User not confirmed");
+// Respond to MFA challenge
+export const verifyMfa = async (session, code) => {
+  const res = await respondToMfaChallenge(session, code);
+  return res;
+};
 
-  const match = await bcrypt.compare(password, user.password);
-  if (!match) throw new Error("Invalid credentials");
+// Setup MFA (return secret key for QR code)
+export const setupMfa = async (accessToken) => {
+  const res = await associateMfaApp(accessToken);
+  return res; // Contains SecretCode
+};
 
-  return user; 
+// Verify MFA during setup
+export const confirmMfaSetup = async (accessToken, code) => {
+  const res = await verifyMfaApp(accessToken, code);
+  return res;
 };
