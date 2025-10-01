@@ -11,6 +11,8 @@ import { errorHandler } from './middleware/error.js';
 import routes from './routes/index.js'
 import { fileURLToPath } from 'url';
 import authRoutes from "./routes/auth.routes.js";
+import dotenv from 'dotenv';
+dotenv.config();
 
 
 
