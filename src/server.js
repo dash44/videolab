@@ -10,6 +10,8 @@ import { limiter } from './middleware/rateLimit.js'
 import { errorHandler } from './middleware/error.js';
 import routes from './routes/index.js'
 import { fileURLToPath } from 'url';
+import authRoutes from "./routes/auth.routes.js";
+
 
 
 const app = express();
@@ -37,7 +39,8 @@ app.use(compression());
 app.use(express.json({ limit: '2mb' }));
 app.use(pinoHTTP({ logger }));
 app.use(limiter);
-
+app.use("/auth", authRoutes);
+app.use("/cog",  authRoutes);
 app.get('/health', (req, res) => res.json({ ok: true }));
 app.use(express.static(path.join(process.cwd(), 'public')));
 app.use('/api/v1', routes);
