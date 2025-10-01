@@ -1,0 +1,76 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>VideoLab · App</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>body{margin:0;font:16px/1.4 system-ui;background:#0b0c10;color:#e8eaf0}
+  .wrap{max-width:960px;margin:40px auto;padding:0 16px}
+  .card{background:#15171c;border:1px solid #23252b;border-radius:14px;padding:18px}</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>VideoLab</h1>
+    <div class="card">
+      <div id="who"></div>
+      <p>
+        <input type="file" id="file" />
+        <button id="upload">Upload</button>
+        <button id="logout" style="margin-left:8px">Logout</button>
+      </p>
+      <pre id="msg"></pre>
+    </div>
+  </div>
+  <script>
+    const msg = (t) => document.getElementById('msg').textContent = t;
+
+    // Require a token
+    const idToken = localStorage.getItem('idToken');
+    if (!idToken) {
+      // bounce back to login and come back here after
+      location.replace('/?next=/app.html');
+    }
+
+    // Show who’s logged in (decode ID token payload)
+    try {
+      const payload = JSON.parse(atob(idToken.split('.')[1]));
+      document.getElementById('who').textContent =
+        `Logged in as ${payload['cognito:username'] || payload.email || 'user'}`;
+    } catch {}
+
+    // Example: call your API with the token
+    async function callApi(path, body) {
+      const res = await fetch(path, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          // If your API expects the *access* token, swap idToken for accessToken.
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      const json = await res.json().catch(()=> ({}));
+      if (!res.ok || json.success === false) {
+        throw new Error(json?.error?.message || res.statusText);
+      }
+      return json;
+    }
+
+    document.getElementById('upload').onclick = async () => {
+      const f = document.getElementById('file').files[0];
+      if (!f) return msg('Pick a file first');
+      msg('Uploading…');
+      try {
+        // adjust the endpoint to your real upload route
+        const r = await callApi('/api/v1/upload/init', { name: f.name, size: f.size, type: f.type });
+        msg('Upload init OK: ' + JSON.stringify(r, null, 2));
+      } catch (e) { msg('Error: ' + e.message); }
+    };
+
+    document.getElementById('logout').onclick = () => {
+      localStorage.removeItem('idToken');
+      location.replace('/');
+    };
+  </script>
+</body>
+</html>
