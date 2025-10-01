@@ -188,17 +188,20 @@
 
     // LOGIN
     $('btn-login').addEventListener('click', async () => {
-      const username = $('login-username').value.trim();
-      const password = $('login-password').value;
-      try {
-        const r = await post('/cog/login', { username, password });
-        const id = r.idToken;
-        if (!id) throw new Error('No idToken from server');
-        localStorage.setItem('idToken', id);
-        setStatus();
-        show('login-msg', 'Login ok', true);
-      } catch (e) { show('login-msg', 'Error: ' + e.message); }
+        const username = $('login-username').value.trim();
+        const password = $('login-password').value;
+        try {
+            const r = await post('/cog/login', { username, password });
+            const id = r?.data?.idToken || r?.meta?.idToken || r?.idToken;
+            if (!id) throw new Error('No idToken from server');
+            localStorage.setItem('idToken', id);
+            setStatus();
+            show('login-msg', 'Login ok', true);
+        } catch (e) {
+            show('login-msg', 'Error: ' + e.message);
+            }   
     });
+
 
     // COPY / LOGOUT
     $('btn-copy').addEventListener('click', async () => {
