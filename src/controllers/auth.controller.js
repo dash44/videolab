@@ -7,6 +7,9 @@ import {
 } from "@aws-sdk/client-cognito-identity-provider";
 import { success, error } from "../utils/response.js";
 
+console.log("COGNITO_CLIENT_ID =", process.env.COGNITO_CLIENT_ID);
+
+
 const REGION = process.env.AWS_REGION || "ap-southeast-2";
 const CLIENT_ID = process.env.COGNITO_CLIENT_ID; // must be the NO-SECRET app client id
 
