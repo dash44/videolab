@@ -4,7 +4,7 @@ import { presignPut, presignGet } from "../aws/s3.js";
 import { ok, notfound, forbidden } from "../utils/response.js";
 import { canSee } from "../middleware/auth.js";
 
-const BUCKET = process.env.S3_BUCKET || "videolab-uploads";
+const BUCKET_UPLOADS = process.env.BUCKET_UPLOADS || "videolab-uploads";
 
 export const listAssets = async (req, res) => {
   const { page = 1, limit = 25 } = req.query;
@@ -21,7 +21,7 @@ export const upload = async (req, res) => {
     const id = nanoid();
     const kind = mimeType.startsWith("image/") ? "image" : "video";
     const s3Key = `uploads/${id}-${filename}`;
-    const uploadUrl = await presignPut({ bucket: BUCKET, key: s3Key, contentType: mimeType });
+    const uploadUrl = await presignPut({ bucket: BUCKET_UPLOADS, key: s3Key, contentType: mimeType });
     await VideoRepo.put({
       assetId: id,
       ownerSub: req.user.sub,
@@ -43,6 +43,6 @@ export const getAsset = async (req, res) => {
   const asset = await VideoRepo.get(id);
   if (!asset?.Item) return notfound(res);
   if (!canSee(asset.Item.ownerSub, req.user)) return forbidden(res);
-  const downloadUrl = await presignGet({ bucket: BUCKET, key: asset.Item.s3Key });
+  const downloadUrl = await presignGet({ bucket: BUCKET_UPLOADS, key: asset.Item.s3Key });
   return ok(res, { ...asset.Item, downloadUrl });
 };

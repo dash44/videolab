@@ -4,7 +4,7 @@ import path from "path";
 import { s3 } from "../aws/s3.js";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 
-const BUCKET = process.env.S3_BUCKET || "videolab-uploads";
+const BUCKET = process.env.BUCKET_OUTPUTS || "a2-group103-outputs";
 
 /**
  * Transcodes a video locally, then uploads the result to S3.
