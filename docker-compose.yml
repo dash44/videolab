@@ -1,7 +1,7 @@
 services:
   photolab:
     build: .
-    image: photolab:2.0
+    image: videolab:2.0
     ports: ["8080:8080"]
     environment:
       - NODE_ENV=production
@@ -9,6 +9,6 @@ services:
       - JWT_SECRET=${JWT_SECRET:-supersecret}
       - LOG_LEVEL=info
     volumes:
-      - ./uploads:app/uploads
+      - ./uploads:/app/uploads
       - ./outputs:/app/outputs
 

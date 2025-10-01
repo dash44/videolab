@@ -1,15 +1,15 @@
 import { nanoid } from "nanoid/non-secure";
 import { JobRepo, VideoRepo } from "../aws/dynamo.js";
 import { presignPut, presignGet } from "../aws/s3.js";
-import { ok, notfound, forbidden } from "../utils/response.js";
+import { ok, notfound, forbidden, bad } from "../utils/response.js";
 import { canSee } from "../middleware/auth.js";
+import { buildOutputKey } from "../services/video.service.js";
 
-const BUCKET = process.env.S3_BUCKET;
-
+const BUCKET_OUTPUTS = process.env.BUCKET_OUTPUTS || "videolab-outputs";
 
 export const processJob = async (req, res) => {
   const { assetId, variants } = req.body;
-
+  if (!assetId) return bad(res, "assetId required");
   const asset = await VideoRepo.get(assetId);
   if (!asset?.Item) return notfound(res, "Asset not found");
   if (!canSee(asset.Item.ownerSub, req.user)) return forbidden(res);
@@ -21,7 +21,7 @@ export const processJob = async (req, res) => {
   const outputs = [];
   for (let v = 1; v <= numVariants; v++) {
     const s3Key = `outputs/${assetId}/v${v}.mp4`;
-    const presignedUrl = await presignPut({ bucket: BUCKET, key: s3Key, contentType: "video/mp4" });
+    const presignedUrl = await presignPut({ bucket: BUCKET_OUTPUTS, key: s3Key, contentType: "video/mp4" });
     outputs.push({ variant: `v${v}`, s3Key, uploadUrl: presignedUrl });
   }
 
@@ -68,7 +68,7 @@ export const downloadVariant = async (req, res) => {
   if (!output) return notfound(res, "Variant not found");
 
   const url = await presignGet({
-    bucket: BUCKET,
+    bucket: BUCKET_OUTPUTS,
     key: output.s3Key,
     responseContentDisposition: `attachment; filename="${jobId}_${variant}.mp4"`,
   });
