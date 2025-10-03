@@ -1,57 +1,84 @@
-import express from 'express';
-import helmet from 'helmet';
-import cors from 'cors';
-import compression from 'compression';
-import pinoHTTP from 'pino-http';
-import path from 'path';
-import { config } from './config.js';
-import { logger } from './logger.js';
-import { limiter } from './middleware/rateLimit.js'
-import { errorHandler } from './middleware/error.js';
-import routes from './routes/index.js'
-import { fileURLToPath } from 'url';
-import authRoutes from "./routes/auth.routes.js";
-import dotenv from 'dotenv';
-dotenv.config();
+// src/server.js
+import "dotenv/config";
+import express from "express";
+import path from "path";
+import { fileURLToPath } from "url";
+import fs from "fs";
+import multer from "multer";
 
+// ESM __dirname 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-
+// App setup
 const app = express();
-const port = 8080;
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
-app.use(express.static(path.join(__dirname, '../public')));
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, '../public', 'app.html'))
+const PORT = process.env.PORT || 8080;
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Static files (UI) 
+const publicDir = path.join(__dirname, "../public");
+app.use(express.static(publicDir));
+
+// index.html (login page)
+app.get("/", (_req, res) => {
+  res.sendFile(path.join(publicDir, "index.html"));
 });
 
-app.use(helmet({
-    contentSecurityPolicy: {
-        directives: {
-            defaultSrc: ["'self'"],
-            mediaSrc: ["'self'", "blob:"],
-            scriptSrc: ["'self'"],
-            styleSrc: ["'self'", "'unsafe-inline'"],
-            imgSrc: ["'self'", "data:"]
-        }
-    }
-}));
-app.use(cors({ origin: true, credentials: true }));
-app.use(compression());
-app.use(express.json({ limit: '2mb' }));
-app.use(pinoHTTP({ logger }));
-app.use(limiter);
-app.use("/auth", authRoutes);
-app.use("/cog",  authRoutes);
-app.get('/health', (req, res) => res.json({ ok: true }));
-app.use(express.static(path.join(process.cwd(), 'public')));
-app.use('/api/v1', routes);
-app.use(errorHandler);
-app.get('/', (req, res) => {
-    res.send('Welcome to VideoLab API!');
+// app.html (post-login page) + allow /app shortcut
+app.get(["/app", "/app/"], (_req, res) => {
+  res.sendFile(path.join(publicDir, "app.html"));
 });
 
+// Cognito auth routes (/cog/...) 
+import cogRoutes from "./routes/auth.routes.js";
+app.use("/cog", cogRoutes);
 
-app.listen(config.port, () => {
-    logger.info(`VideoLab API listening on port ${config.port}`);
+// Simple file upload: POST /api/v1/upload (multipart/form-data; field: "file")
+const uploadsDir = path.join(__dirname, "../uploads");
+fs.mkdirSync(uploadsDir, { recursive: true });
+const upload = multer({ dest: uploadsDir });
+
+const api = express.Router();
+api.post("/upload", upload.single("file"), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ success: false, error: { message: "No file" } });
+  }
+  return res.json({
+    success: true,
+    data: {
+      originalName: req.file.originalname,
+      storedAs: req.file.filename,
+      size: req.file.size,
+    },
+  });
+});
+app.use("/api/v1", api);
+
+// Health 
+app.get("/healthz", (_req, res) => res.json({ ok: true }));
+
+// 404 fallback for unknown API routes 
+app.use((req, res, next) => {
+  if (req.path.startsWith("/api/") || req.path.startsWith("/cog/")) {
+    return res.status(404).json({ success: false, error: { message: "Not Found" } });
+  }
+  return next();
+});
+
+// Error handler
+app.use((err, _req, res, _next) => {
+  console.error(err);
+  const status = err.status || 500;
+  res.status(status).json({
+    success: false,
+    error: { message: err.message || "Server error" },
+  });
+});
+
+// Start 
+console.log("COGNITO_CLIENT_ID =", process.env.COGNITO_CLIENT_ID || "(missing)");
+app.listen(PORT, () => {
+  console.log(`VideoLab API listening on port ${PORT}`);
 });
