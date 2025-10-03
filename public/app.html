@@ -43,6 +43,15 @@
 
 <script>
 const $ = id => document.getElementById(id);
+const params = new URLSearchParams(location.search);
+const asset = params.get('asset');
+if (asset) {
+  // show next step panel
+  const next = document.getElementById('next');
+  if (next) next.style.display = 'block';
+  const slot = document.getElementById('next-asset');
+  if (slot) slot.textContent = asset;
+}
 
 function getIdToken(){
   return localStorage.getItem('idToken') || '';
@@ -72,25 +81,30 @@ async function api(path, opts={}){
 }
 
 $('btn-upload').addEventListener('click', async () => {
-  const f = $('file').files[0];
-  if(!f){ $('out').textContent = 'Pick a file first.'; return; }
-  $('out').textContent = 'Uploading…';
-  try {
-    const fd = new FormData();
-    fd.append('file', f);
-    // adjust endpoint if yours is different:
-    const r = await fetch('/api/v1/upload', {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + getIdToken() },
-      body: fd
-    });
-    const j = await r.json().catch(()=> ({}));
-    if (!r.ok || j.success === false) throw new Error(j?.error?.message || r.statusText);
-    $('out').textContent = 'Upload ok\n' + JSON.stringify(j, null, 2);
-  } catch (e){
-    $('out').textContent = 'Upload failed: ' + e.message;
-  }
-});
+    const f = $('file').files[0];
+    $('err').textContent = '';
+    try {
+      if (!f) throw new Error('Pick a file first');
+
+      const fd = new FormData();
+      fd.append('file', f);
+
+      const r = await fetch('/api/v1/upload', { method: 'POST', body: fd });
+      const j = await r.json();
+      if (!r.ok || j.success === false) throw new Error(j?.error?.message || 'Upload failed');
+
+      // show result
+      $('out').textContent = JSON.stringify(j, null, 2);
+      setStatus('Upload ok', 'ok');
+
+      // carry user into the next step automatically
+      const assetId = j?.data?.assetId || j?.data?.storedAs;
+      // redrirect
+      window.location.href = `/app.html?asset=${assetId}`;
+    } catch (e) {
+      setStatus('Upload failed: ' + e.message, 'error');
+    }
+  });
 
 $('btn-copy').addEventListener('click', async () => {
   const id = getIdToken();

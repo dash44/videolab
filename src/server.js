@@ -6,79 +6,64 @@ import { fileURLToPath } from "url";
 import fs from "fs";
 import multer from "multer";
 
-// ESM __dirname 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// App setup
 const app = express();
 const PORT = process.env.PORT || 8080;
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Static files (UI) 
+// request logger
+app.use((req, res, next) => {
+  const t0 = Date.now();
+  res.on("finish", () => {
+    console.log(`${req.method} ${req.originalUrl} -> ${res.statusCode} ${Date.now()-t0}ms`);
+  });
+  next();
+});
+
+// Static UI
 const publicDir = path.join(__dirname, "../public");
 app.use(express.static(publicDir));
+app.get("/", (_req, res) => res.sendFile(path.join(publicDir, "index.html")));
+app.get(["/app", "/app/"], (_req, res) => res.sendFile(path.join(publicDir, "app.html")));
 
-// index.html (login page)
-app.get("/", (_req, res) => {
-  res.sendFile(path.join(publicDir, "index.html"));
-});
-
-// app.html (post-login page) + allow /app shortcut
-app.get(["/app", "/app/"], (_req, res) => {
-  res.sendFile(path.join(publicDir, "app.html"));
-});
-
-// Cognito auth routes (/cog/...) 
+// Cognito routes
 import cogRoutes from "./routes/auth.routes.js";
 app.use("/cog", cogRoutes);
 
-// Simple file upload: POST /api/v1/upload (multipart/form-data; field: "file")
+// Upload API
 const uploadsDir = path.join(__dirname, "../uploads");
 fs.mkdirSync(uploadsDir, { recursive: true });
 const upload = multer({ dest: uploadsDir });
 
-const api = express.Router();
-api.post("/upload", upload.single("file"), (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ success: false, error: { message: "No file" } });
-  }
-  return res.json({
+app.post("/api/v1/upload", upload.single("file"), (req, res) => {
+  if (!req.file) return res.status(400).json({ success: false, error: { message: "No file" } });
+
+  // Use multer's random filename as an assetId the UI can carry forward
+  const assetId = req.file.filename;
+
+  res.json({
     success: true,
     data: {
+      assetId,
       originalName: req.file.originalname,
       storedAs: req.file.filename,
       size: req.file.size,
     },
   });
 });
-app.use("/api/v1", api);
 
-// Health 
+// serve uploaded files if you want to preview them
+app.get("/uploads/:name", (req, res) => {
+  const f = path.join(uploadsDir, req.params.name);
+  if (!fs.existsSync(f)) return res.status(404).send("Not found");
+  res.sendFile(f);
+});
+
 app.get("/healthz", (_req, res) => res.json({ ok: true }));
 
-// 404 fallback for unknown API routes 
-app.use((req, res, next) => {
-  if (req.path.startsWith("/api/") || req.path.startsWith("/cog/")) {
-    return res.status(404).json({ success: false, error: { message: "Not Found" } });
-  }
-  return next();
-});
-
-// Error handler
-app.use((err, _req, res, _next) => {
-  console.error(err);
-  const status = err.status || 500;
-  res.status(status).json({
-    success: false,
-    error: { message: err.message || "Server error" },
-  });
-});
-
-// Start 
 console.log("COGNITO_CLIENT_ID =", process.env.COGNITO_CLIENT_ID || "(missing)");
-app.listen(PORT, () => {
-  console.log(`VideoLab API listening on port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`VideoLab API listening on port ${PORT}`));
