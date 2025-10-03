@@ -36,88 +36,83 @@
     <div class="row">
       <input type="file" id="file">
       <button id="btn-upload">Upload</button>
+      <pre id="out" class="small" style="margin: top 8px;"></pre>
     </div>
     <div id="out" class="msg" style="margin-top:10px"></div>
   </div>
 </div>
 
+<div id="next" style="display:none; margin-top:14px">
+  <div class="small">Asset ready: <code id="next-asset"></code></div>
+</div>
+
 <script>
-const $ = id => document.getElementById(id);
-const params = new URLSearchParams(location.search);
-const asset = params.get('asset');
-if (asset) {
-  // show next step panel
-  const next = document.getElementById('next');
-  if (next) next.style.display = 'block';
-  const slot = document.getElementById('next-asset');
-  if (slot) slot.textContent = asset;
-}
+document.addEventListener('DOMContentLoaded', () => {
+  const $ = (id) => document.getElementById(id);
 
-function getIdToken(){
-  return localStorage.getItem('idToken') || '';
-}
-
-function setStatusLine(){
-  const id = getIdToken();
-  $('status').textContent = id ? 'Logged in (token in storage)' : 'Not logged in';
-}
-
-async function api(path, opts={}){
-  const id = getIdToken();
-  if(!id) throw new Error('Missing idToken. Please log in again.');
-  const res = await fetch(path, {
-    method: opts.method || 'GET',
-    headers: {
-      'Authorization': 'Bearer ' + id,
-      ...(opts.body && !(opts.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {})
-    },
-    body: opts.body && !(opts.body instanceof FormData) ? JSON.stringify(opts.body) : opts.body
-  });
-  const json = await res.json().catch(()=> ({}));
-  if (!res.ok || json.success === false) {
-    throw new Error(json?.error?.message || res.statusText || 'Request failed');
+  // --- show "next" panel if redirected with ?asset=...
+  const params = new URLSearchParams(location.search);
+  const assetParam = params.get('asset');
+  if (assetParam) {
+    const next = $('next'); if (next) next.style.display = 'block';
+    const slot = $('next-asset'); if (slot) slot.textContent = assetParam;
   }
-  return json;
-}
 
-$('btn-upload').addEventListener('click', async () => {
-    const f = $('file').files[0];
-    $('err').textContent = '';
+  // --- upload handler
+  const btn = $('btn-upload');
+  const file = $('file');
+  const out  = $('out');
+
+  btn?.addEventListener('click', async (e) => {
+    e.preventDefault();
+    out.textContent = '';
+
     try {
+      const tok = localStorage.getItem('idToken');
+      if (!tok) throw new Error('Not logged in');
+
+      const f = file?.files?.[0];
       if (!f) throw new Error('Pick a file first');
+
+      btn.disabled = true;
+      const originalText = btn.textContent;
+      btn.textContent = 'Uploading…';
 
       const fd = new FormData();
       fd.append('file', f);
 
-      const r = await fetch('/api/v1/upload', { method: 'POST', body: fd });
-      const j = await r.json();
-      if (!r.ok || j.success === false) throw new Error(j?.error?.message || 'Upload failed');
+      const res = await fetch('/api/v1/upload', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + tok },
+        body: fd, // do NOT set Content-Type manually
+      });
 
-      // show result
-      $('out').textContent = JSON.stringify(j, null, 2);
-      setStatus('Upload ok', 'ok');
+      const txt = await res.text();
+      let j;
+      try { j = JSON.parse(txt); }
+      catch { throw new Error('Bad JSON from server: ' + txt.slice(0, 180)); }
 
-      // carry user into the next step automatically
+      if (!res.ok || j.success === false) {
+        throw new Error(j?.error?.message || res.statusText || 'Upload failed');
+      }
+
+      out.textContent = JSON.stringify(j, null, 2);
+
+      // carry the asset into the next step via querystring
       const assetId = j?.data?.assetId || j?.data?.storedAs;
-      // redrirect
-      window.location.href = `/app.html?asset=${assetId}`;
-    } catch (e) {
-      setStatus('Upload failed: ' + e.message, 'error');
+      if (assetId) {
+        window.location.replace('/app.html?asset=' + encodeURIComponent(assetId));
+      }
+      btn.textContent = originalText;
+      btn.disabled = false;
+    } catch (err) {
+      out.textContent = 'Upload failed: ' + (err?.message || err);
+      btn.disabled = false;
+      btn.textContent = 'Upload';
+      console.error('upload error:', err);
     }
   });
-
-$('btn-copy').addEventListener('click', async () => {
-  const id = getIdToken();
-  if(!id) return alert('No token in storage.');
-  await navigator.clipboard.writeText(id).catch(()=>{});
-  alert('ID token copied');
 });
-$('btn-logout').addEventListener('click', () => {
-  localStorage.removeItem('idToken');
-  location.href = '/';
-});
-
-setStatusLine();
 </script>
 </body>
 </html>
