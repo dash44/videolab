@@ -189,23 +189,30 @@
 
     // LOGIN
     $('btn-login').addEventListener('click', async () => {
-        const username = $('login-username').value.trim();
-        const password = $('login-password').value;
-        try {
-            const r  = await post('/cog/login', { username, password });
-            const id = r?.data?.idToken || r?.meta?.idToken || r?.idToken;
-            if (!id) throw new Error('No idToken from server');
+      const username = $('login-username').value.trim();
+      const password = $('login-password').value;
+      try {
+        const r = await post('/cog/login', { username, password });
 
-            localStorage.setItem('idToken', id);
-            setStatus();
-            show('login-msg', 'Login ok', true);
+        const tok = r.data || r.meta || r;
+        const id = tok.idToken;
+        if (!id) throw new Error('No idToken from server');
 
-            // redirect
-            window.location.replace(AFTER_LOGIN);
-        } catch (e) {
-            show('login-msg', 'Error: ' + e.message);
-        }
+        localStorage.setItem('idToken', id);
+
+        // optional: keep for other calls if you want
+        localStorage.setItem('accessToken', tok.accessToken || '');
+
+        show('login-msg', 'Login ok', true);
+        setStatus();
+
+        // go to the app page
+        window.location.href = '/app';
+      } catch (e) {
+        show('login-msg', 'Error: ' + e.message);
+      }
     });
+
 
 
     // COPY / LOGOUT

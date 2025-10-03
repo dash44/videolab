@@ -99,11 +99,17 @@ export const login = async (req, res) => {
     const ar = authResp.AuthenticationResult;
     if (!ar) return error(res, "Login failed", 401);
 
-    return success(res, {
-      idToken: ar.IdToken,
+    const payload = {
       accessToken: ar.AccessToken,
+      idToken: ar.IdToken,
       refreshToken: ar.RefreshToken,
       expiresIn: ar.ExpiresIn,
+    };
+    
+    return res.status(200).json({
+      success: true,
+      data: payload,   // for existing clients
+      ...payload       // for new clients (r.idToken, etc.)
     });
   } catch (e) {
     console.error(e);

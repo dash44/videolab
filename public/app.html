@@ -1,76 +1,109 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <title>VideoLab · App</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <style>body{margin:0;font:16px/1.4 system-ui;background:#0b0c10;color:#e8eaf0}
-  .wrap{max-width:960px;margin:40px auto;padding:0 16px}
-  .card{background:#15171c;border:1px solid #23252b;border-radius:14px;padding:18px}</style>
+  <meta charset="utf-8"/>
+  <title>VideoLab – App</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <style>
+    :root { --bg:#0b0c10; --card:#15171c; --text:#e8eaf0; --muted:#9aa3b2; --accent:#2d6cdf; --danger:#e5484d; }
+    body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+    .wrap{max-width:960px;margin:32px auto;padding:0 16px}
+    .card{background:var(--card);border:1px solid #23252b;border-radius:14px;padding:18px}
+    .row{display:flex;gap:12px;align-items:center}
+    button{padding:10px 16px;border:1px solid #2a2e36;background:var(--accent);color:#fff;border-radius:10px;cursor:pointer}
+    .ghost{background:transparent}
+    .muted{color:var(--muted)}
+    .msg{white-space:pre-wrap;font-family:ui-monospace,Menlo,Consolas,monospace}
+  </style>
 </head>
 <body>
-  <div class="wrap">
-    <h1>VideoLab</h1>
-    <div class="card">
-      <div id="who"></div>
-      <p>
-        <input type="file" id="file" />
-        <button id="upload">Upload</button>
-        <button id="logout" style="margin-left:8px">Logout</button>
-      </p>
-      <pre id="msg"></pre>
+<div class="wrap">
+  <div class="card" style="margin-bottom:12px">
+    <div class="row" style="justify-content:space-between">
+      <div>
+        <div class="muted">Status</div>
+        <div id="status">Loading…</div>
+      </div>
+      <div class="row">
+        <button class="ghost" id="btn-copy">Copy ID token</button>
+        <button class="ghost" id="btn-logout">Logout</button>
+      </div>
     </div>
   </div>
-  <script>
-    const msg = (t) => document.getElementById('msg').textContent = t;
 
-    // Require a token
-    const idToken = localStorage.getItem('idToken');
-    if (!idToken) {
-      // bounce back to login and come back here after
-      location.replace('/?next=/app.html');
-    }
+  <div class="card">
+    <h3 style="margin:0 0 10px 0">Upload</h3>
+    <div class="row">
+      <input type="file" id="file">
+      <button id="btn-upload">Upload</button>
+    </div>
+    <div id="out" class="msg" style="margin-top:10px"></div>
+  </div>
+</div>
 
-    // Show who’s logged in (decode ID token payload)
-    try {
-      const payload = JSON.parse(atob(idToken.split('.')[1]));
-      document.getElementById('who').textContent =
-        `Logged in as ${payload['cognito:username'] || payload.email || 'user'}`;
-    } catch {}
+<script>
+const $ = id => document.getElementById(id);
 
-    // Example: call your API with the token
-    async function callApi(path, body) {
-      const res = await fetch(path, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          // If your API expects the *access* token, swap idToken for accessToken.
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: body ? JSON.stringify(body) : undefined,
-      });
-      const json = await res.json().catch(()=> ({}));
-      if (!res.ok || json.success === false) {
-        throw new Error(json?.error?.message || res.statusText);
-      }
-      return json;
-    }
+function getIdToken(){
+  return localStorage.getItem('idToken') || '';
+}
 
-    document.getElementById('upload').onclick = async () => {
-      const f = document.getElementById('file').files[0];
-      if (!f) return msg('Pick a file first');
-      msg('Uploading…');
-      try {
-        // adjust the endpoint to your real upload route
-        const r = await callApi('/api/v1/upload/init', { name: f.name, size: f.size, type: f.type });
-        msg('Upload init OK: ' + JSON.stringify(r, null, 2));
-      } catch (e) { msg('Error: ' + e.message); }
-    };
+function setStatusLine(){
+  const id = getIdToken();
+  $('status').textContent = id ? 'Logged in (token in storage)' : 'Not logged in';
+}
 
-    document.getElementById('logout').onclick = () => {
-      localStorage.removeItem('idToken');
-      location.replace('/');
-    };
-  </script>
+async function api(path, opts={}){
+  const id = getIdToken();
+  if(!id) throw new Error('Missing idToken. Please log in again.');
+  const res = await fetch(path, {
+    method: opts.method || 'GET',
+    headers: {
+      'Authorization': 'Bearer ' + id,
+      ...(opts.body && !(opts.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {})
+    },
+    body: opts.body && !(opts.body instanceof FormData) ? JSON.stringify(opts.body) : opts.body
+  });
+  const json = await res.json().catch(()=> ({}));
+  if (!res.ok || json.success === false) {
+    throw new Error(json?.error?.message || res.statusText || 'Request failed');
+  }
+  return json;
+}
+
+$('btn-upload').addEventListener('click', async () => {
+  const f = $('file').files[0];
+  if(!f){ $('out').textContent = 'Pick a file first.'; return; }
+  $('out').textContent = 'Uploading…';
+  try {
+    const fd = new FormData();
+    fd.append('file', f);
+    // adjust endpoint if yours is different:
+    const r = await fetch('/api/v1/upload', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + getIdToken() },
+      body: fd
+    });
+    const j = await r.json().catch(()=> ({}));
+    if (!r.ok || j.success === false) throw new Error(j?.error?.message || r.statusText);
+    $('out').textContent = 'Upload ok\n' + JSON.stringify(j, null, 2);
+  } catch (e){
+    $('out').textContent = 'Upload failed: ' + e.message;
+  }
+});
+
+$('btn-copy').addEventListener('click', async () => {
+  const id = getIdToken();
+  if(!id) return alert('No token in storage.');
+  await navigator.clipboard.writeText(id).catch(()=>{});
+  alert('ID token copied');
+});
+$('btn-logout').addEventListener('click', () => {
+  localStorage.removeItem('idToken');
+  location.href = '/';
+});
+
+setStatusLine();
+</script>
 </body>
 </html>

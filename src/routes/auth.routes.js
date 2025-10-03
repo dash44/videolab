@@ -9,7 +9,6 @@ r.post("/signup", validate(registerSchema), register);  // alias of /register
 r.post("/register", validate(registerSchema), register);
 r.post("/confirm", confirm);
 r.post("/login", validate(loginSchema), login);
-r.post("/mfa", validate(mfaSchema), login); // reuse login handler for MFA step
 
 
 
