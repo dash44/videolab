@@ -36,152 +36,157 @@
     <div class="row">
       <input type="file" id="file">
       <button id="btn-upload">Upload</button>
-      <pre id="out" class="small" style="margin: top 8px;"></pre>
     </div>
-    <div id="out" class="msg" style="margin-top:10px"></div>
+    <pre id="out" class="msg" style="margin-top:10px"></pre>
   </div>
-</div>
 
-<div id="xcode" style="display:none; margin-top:14px">
-  <div class="small" style="margin-bottom:6px">
-    Asset ready: <code id="asset-id"></code>
+  <div id="xcode" class="card" style="display:none; margin-top:14px">
+    <div class="muted" style="margin-bottom:6px">
+      Asset ready: <code id="asset-id"></code>
+    </div>
+    <div style="display:flex; gap:8px; margin-bottom:10px">
+      <button class="ghost" id="p-360">360p</button>
+      <button class="ghost" id="p-720">720p</button>
+      <button class="ghost" id="p-1080">1080p</button>
+    </div>
+    <pre id="x-status" class="msg"></pre>
   </div>
-  <div style="display:flex; gap:8px; margin-bottom:10px">
-    <button class="ghost" id="p-360">360p</button>
-    <button class="ghost" id="p-720">720p</button>
-    <button class="ghost" id="p-1080">1080p</button>
-  </div>
-  <pre id="x-status" class="small"></pre>
-</div>
 
-<div id="next" style="display:none; margin-top:14px">
-  <div class="small">Asset ready: <code id="next-asset"></code></div>
+  <div id="next" class="card" style="display:none; margin-top:14px">
+    <div class="muted">Asset ready: <code id="next-asset"></code></div>
+  </div>
 </div>
 
 <script>
-  document.addEventListener('DOMContentLoaded', () => {
-    const $ = (id) => document.getElementById(id);
-  
-    // status text
-    const statusEl = $('status');
-    const setStatus = (t) => { if (statusEl) statusEl.textContent = t; };
-    setStatus(localStorage.getItem('idToken') ? 'Logged in (token in storage)' : 'Not logged in');
-  
-    // helper that sends JSON with bearer token
-    async function api(path, body) {
-      const id = localStorage.getItem('idToken') || '';
-      const r = await fetch(path, {
-        method: 'POST',
-        headers: { 'Content-Type':'application/json', 'Authorization':'Bearer ' + id },
-        body: JSON.stringify(body || {})
+document.addEventListener('DOMContentLoaded', () => {
+  const $ = (id) => document.getElementById(id);
+
+  // status
+  const setStatus = (t) => { const el = $('status'); if (el) el.textContent = t; };
+  setStatus(localStorage.getItem('idToken') ? 'Logged in (token in storage)' : 'Not logged in');
+
+  // JSON POST with bearer
+  async function api(path, body) {
+    const id = localStorage.getItem('idToken') || '';
+    const r = await fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json', 'Authorization':'Bearer ' + id },
+      body: JSON.stringify(body || {})
+    });
+    const j = await r.json().catch(()=>({}));
+    if (!r.ok || j.success === false) {
+      throw new Error(j?.error?.message || r.statusText || 'Request failed');
+    }
+    return j;
+  }
+
+  // reveal panels if ?asset=...
+  const params = new URLSearchParams(location.search);
+  const assetParam = params.get('asset');
+  if (assetParam) {
+    $('next').style.display = 'block';
+    $('next-asset').textContent = assetParam;
+    $('xcode').style.display = 'block';
+    $('asset-id').textContent = assetParam;
+  }
+
+  // upload via pre-signed URL
+  const btn = $('btn-upload');
+  const file = $('file');
+  const out  = $('out');
+
+  btn?.addEventListener('click', async (e) => {
+    e.preventDefault();
+    out.textContent = '';
+
+    try {
+      const tok = localStorage.getItem('idToken');
+      if (!tok) throw new Error('Not logged in');
+
+      const f = file?.files?.[0];
+      if (!f) throw new Error('Pick a file first');
+
+      btn.disabled = true;
+      const originalText = btn.textContent;
+      btn.textContent = 'Requesting URL…';
+
+      // 1) ask server for presigned PUT
+      const { data: up } = await api('/api/v1/upload-url', {
+        filename: f.name,
+        mime: f.type || 'application/octet-stream'
       });
-      const j = await r.json().catch(()=>({}));
-      if (!r.ok || j.success === false) {
-        throw new Error(j?.error?.message || r.statusText || 'Request failed');
-      }
-      return j;
+
+      // 2) PUT directly to S3
+      btn.textContent = 'Uploading…';
+      const putRes = await fetch(up.uploadUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': f.type || 'application/octet-stream' },
+        body: f
+      });
+      if (!putRes.ok) throw new Error('S3 upload failed: ' + putRes.status + ' ' + putRes.statusText);
+
+      // 3) register video metadata
+      btn.textContent = 'Registering…';
+      const reg = await api('/api/v1/videos', { key: up.key, originalName: f.name });
+
+      out.textContent = JSON.stringify({ upload: up, registered: reg.data }, null, 2);
+
+      // 4) go to transcode step carrying the S3 key
+      window.location.replace('/app.html?asset=' + encodeURIComponent(up.key));
+
+      btn.textContent = originalText;
+      btn.disabled = false;
+    } catch (err) {
+      out.textContent = 'Upload failed: ' + (err?.message || err);
+      btn.disabled = false;
+      btn.textContent = 'Upload';
+      console.error('upload error:', err);
     }
-  
-    // reveal "next/xcode" if we landed with ?asset=
-    const params = new URLSearchParams(location.search);
-    const assetParam = params.get('asset');
-    if (assetParam) {
-      const next = $('next'); if (next) next.style.display = 'block';
-      const slot = $('next-asset'); if (slot) slot.textContent = assetParam;
-  
-      const xcode = $('xcode'); if (xcode) xcode.style.display = 'block';
-      const aid = $('asset-id'); if (aid) aid.textContent = assetParam;
-    }
-  
-    // upload
-    const btn = $('btn-upload');
-    const file = $('file');
-    const out  = $('out');
-  
-    btn?.addEventListener('click', async (e) => {
-      e.preventDefault();
-      if (!out) return;
-      out.textContent = '';
-  
-      try {
-        const tok = localStorage.getItem('idToken');
-        if (!tok) throw new Error('Not logged in');
-  
-        const f = file?.files?.[0];
-        if (!f) throw new Error('Pick a file first');
-  
-        btn.disabled = true;
-        const originalText = btn.textContent;
-        btn.textContent = 'Uploading…';
-  
-        const fd = new FormData();
-        fd.append('file', f);
-  
-        const res = await fetch('/api/v1/upload', {
-          method: 'POST',
-          headers: { 'Authorization': 'Bearer ' + tok },
-          body: fd               // do NOT set Content-Type manually
-        });
-  
-        const txt = await res.text();
-        let j; try { j = JSON.parse(txt); } catch { throw new Error('Bad JSON from server: ' + txt.slice(0,180)); }
-        if (!res.ok || j.success === false) throw new Error(j?.error?.message || res.statusText || 'Upload failed');
-  
-        out.textContent = JSON.stringify(j, null, 2);
-  
-        const assetId = j?.data?.assetId || j?.data?.storedAs;
-        if (assetId) {
-          // redirect into the same page with the asset id to reveal transcode panel
-          window.location.replace('/app.html?asset=' + encodeURIComponent(assetId));
-        }
-  
-        btn.textContent = originalText;
-        btn.disabled = false;
-      } catch (err) {
-        if (out) out.textContent = 'Upload failed: ' + (err?.message || err);
-        btn.disabled = false;
-        btn.textContent = 'Upload';
-        console.error('upload error:', err);
-      }
-    });
-  
-    // transcode flow
-    async function startTranscode(preset) {
-      $('x-status').textContent = 'Submitting job...';
-      const { data } = await api('/api/v1/transcode', { assetId: $('asset-id').textContent, preset });
-      $('x-status').textContent = 'Job ' + data.jobId + ' queued (' + preset + '). Waiting...';
-  
-      const poll = async () => {
-        const r = await fetch('/api/v1/jobs/' + data.jobId, {
-          headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('idToken')||'') }
-        });
-        const j = await r.json();
-        if (!r.ok || j.success === false) throw new Error(j?.error?.message || 'Job check failed');
-        if (j.data.status === 'complete') {
-          $('x-status').textContent = 'Done ✅ Output: ' + j.data.outputPath;
-        } else if (j.data.status === 'error') {
-          $('x-status').textContent = 'Failed ❌ ' + (j.data.message || '');
-        } else {
-          setTimeout(poll, 1500);
-        }
-      };
-      setTimeout(poll, 1200);
-    }
-  
-    ['360','720','1080'].forEach(h => $('p-' + h)?.addEventListener('click', () => startTranscode(h)));
-  
-    // copy + logout
-    $('btn-copy')?.addEventListener('click', async () => {
-      const id = localStorage.getItem('idToken') || '';
-      if (!id) return alert('No token in storage');
-      await navigator.clipboard.writeText(id);
-      alert('ID token copied');
-    });
-    $('btn-logout')?.addEventListener('click', () => {
-      localStorage.removeItem('idToken');
-      setStatus('Not logged in');
-    });
   });
-  </script>  
+
+  // transcode flow 
+  async function startTranscode(preset) {
+    const aid = $('asset-id').textContent;
+    if (!aid) return;
+
+    $('x-status').textContent = 'Submitting job...';
+    const { data } = await api('/api/v1/transcode', { assetId: aid, preset });
+
+    $('x-status').textContent = 'Job ' + data.jobId + ' queued (' + preset + '). Waiting...';
+
+    const poll = async () => {
+      const r = await fetch('/api/v1/jobs/' + data.jobId, {
+        headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('idToken')||'') }
+      });
+      const j = await r.json();
+      if (!r.ok || j.success === false) throw new Error(j?.error?.message || 'Job check failed');
+
+      if (j.data.status === 'complete') {
+        const s3path = 's3://' + j.data.outBucket + '/' + j.data.outKey;
+        $('x-status').textContent = 'Done ✅ Output: ' + s3path;
+      } else if (j.data.status === 'error') {
+        $('x-status').textContent = 'Failed ❌ ' + (j.data.message || '');
+      } else {
+        setTimeout(poll, 1500);
+      }
+    };
+    setTimeout(poll, 1200);
+  }
+
+  ['360','720','1080'].forEach(h => $('p-' + h)?.addEventListener('click', () => startTranscode(h)));
+
+  // copy + logout
+  $('btn-copy')?.addEventListener('click', async () => {
+    const id = localStorage.getItem('idToken') || '';
+    if (!id) return alert('No token in storage');
+    await navigator.clipboard.writeText(id);
+    alert('ID token copied');
+  });
+  $('btn-logout')?.addEventListener('click', () => {
+    localStorage.removeItem('idToken');
+    setStatus('Not logged in');
+  });
+});
+</script>
 </body>
 </html>
