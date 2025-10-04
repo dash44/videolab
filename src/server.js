@@ -10,6 +10,8 @@ import { randomUUID } from "crypto";
 import { S3Client, PutObjectCommand, CopyObjectCommand } from "@aws-sdk/client-s3";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, PutCommand, UpdateCommand, GetCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+
 
 // env + aws clients
 const {
@@ -24,7 +26,8 @@ const {
 } = process.env;
 
 const s3 = new S3Client({ region: AWS_REGION });
-const ddbc = DynamoDBDocumentClient.from(new DynamoDBClient({ region: AWS_REGION }));
+const ddb  = new DynamoDBClient({ region: AWS_REGION });
+const ddbc = DynamoDBDocumentClient.from(ddb);
 
 // basic app setup
 const __filename = fileURLToPath(import.meta.url);
@@ -49,6 +52,18 @@ function requireAuth(req, res, next) {
   if (!h.startsWith("Bearer ")) return res.status(401).json({ success: false, error: { message: "Missing token" } });
   next();
 }
+
+// Decode Cognito JWT payload (demo-only: no signature verification)
+function jwtPayload(req) {
+    try {
+      const token = (req.headers.authorization || '').split(' ')[1] || '';
+      const payloadB64 = token.split('.')[1] || '';
+      return JSON.parse(Buffer.from(payloadB64, 'base64').toString('utf8'));
+    } catch {
+      return {};
+    }
+  }
+  
 
 // decode (not verify) JWT just to extract claims for demo
 function getClaims(req) {
@@ -138,6 +153,70 @@ app.post("/api/v1/upload", requireAuth, upload.single("file"), async (req, res) 
     return res.status(500).json({ success: false, error: { message: e.message || "Upload failed" } });
   }
 });
+
+app.post('/api/v1/upload-url', requireAuth, express.json(), async (req, res) => {
+    try {
+        const { filename, contentType } = req.body || {};
+        if (!filename || !contentType) {
+            return res.status(400).json({ success:false, error:{ message:'filename and contentType are required' }});
+        }
+        
+        const { sub: ownerSub = 'unknown', 'cognito:username': username = 'unknown' } = jwtPayload(req);
+  
+        const assetId = randomUUID();
+        const key = `uploads/${assetId}`;
+    
+        // record the intent in DynamoDB (status "uploading")
+        await ddbc.send(new PutCommand({
+            TableName: DDB_TABLE_VIDEOS,
+            Item: {
+            assetId,
+            ownerSub,
+            username,
+            originalName: filename,
+            contentType,
+            status: 'uploading',
+            createdAt: Date.now(),
+            }
+        }));
+    
+        // presigned URL to upload directly to S3
+        const cmd = new PutObjectCommand({
+            Bucket: BUCKET_UPLOADS,
+            Key: key,
+            ContentType: contentType,
+            Metadata: { assetId, ownerSub, username, originalName: filename }
+        });
+        const putUrl = await getSignedUrl(s3, cmd, { expiresIn: 900 });
+    
+        return res.json({ success:true, data:{ assetId, key, putUrl }});
+        } catch (err) {
+        console.error('upload-url error:', err);
+        return res.status(500).json({ success:false, error:{ message:'Failed to create upload URL' }});
+    }
+});
+
+app.post('/api/v1/upload-complete', requireAuth, express.json(), async (req, res) => {
+    try {
+        const { assetId } = req.body || {};
+        if (!assetId) {
+            return res.status(400).json({ success:false, error:{ message:'assetId required' }});
+        }
+    
+        await ddbc.send(new UpdateCommand({
+            TableName: DDB_TABLE_VIDEOS,
+            Key: { assetId },
+            UpdateExpression: 'SET #st = :s, uploadedAt = :t',
+            ExpressionAttributeNames: { '#st': 'status' },
+            ExpressionAttributeValues: { ':s':'uploaded', ':t': Date.now() }
+        }));
+    
+        return res.json({ success:true });
+        } catch (err) {
+        console.error('upload-complete error:', err);
+        return res.status(500).json({ success:false, error:{ message:'Failed to mark upload complete' }});
+        }
+    });
 
 // serve uploaded/processed files back if needed (handy for demo)
 app.get("/uploads/:name", (req, res) => {
