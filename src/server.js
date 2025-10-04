@@ -302,18 +302,26 @@ app.post("/api/v1/transcode", requireAuth, async (req, res) => {
         );
         jobsMem.set(jobId, { status: "complete", outputPath: `/s3/${BUCKET_OUTPUTS}/${outKey}` });
 
-        // patch the video item with outputs map and status
+        // 1) ensure the outputs map exists (no child path in same expression)
         await ddbc.send(new UpdateCommand({
             TableName: DDB_TABLE_VIDEOS,
             Key: { assetId },
-            UpdateExpression: 'SET #out = if_not_exists(#out, :empty), #out.#p = :k, #st = :st',
+            UpdateExpression: 'SET #out = if_not_exists(#out, :empty)',
+            ExpressionAttributeNames: { '#out': 'outputs' },
+            ExpressionAttributeValues: { ':empty': {} },
+        }));
+        
+        // 2) write the preset and mark ready
+        await ddbc.send(new UpdateCommand({
+            TableName: DDB_TABLE_VIDEOS,
+            Key: { assetId },
+            UpdateExpression: 'SET #out.#p = :k, #st = :st',
             ExpressionAttributeNames: {
                 '#out': 'outputs',
-                '#p': preset.toString(),  // ensure attribute name is a string
+                '#p': preset.toString(),  // make sure it’s a string
                 '#st': 'status',
             },
             ExpressionAttributeValues: {
-                ':empty': {},
                 ':k': outKey,
                 ':st': 'ready',
             },
