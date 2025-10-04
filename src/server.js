@@ -12,8 +12,6 @@ import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, PutCommand, UpdateCommand, GetCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { SecretsManagerClient, GetSecretValueCommand } from "@aws-sdk/client-secrets-manager";
-import crypto from "crypto";
-
 
 
 // env + aws clients
@@ -31,26 +29,26 @@ const {
 const s3 = new S3Client({ region: AWS_REGION });
 const ddb  = new DynamoDBClient({ region: AWS_REGION });
 const ddbc = DynamoDBDocumentClient.from(ddb);
-const secrets = new SecretsManagerClient({ region: AWS_REGION });
+const sm = new SecretsManagerClient({ region: AWS_REGION });
+let SECRET_API_KEY = "";
 
-let CACHED_JWT_SECRET = null;
-
-async function loadJwtSecret() {
-  if (CACHED_JWT_SECRET) return CACHED_JWT_SECRET;
-
-  const SecretId = process.env.SECRET_NAME || "a2-group103-secret";
-  const r = await secrets.send(new GetSecretValueCommand({ SecretId }));
-  const raw = r.SecretString || "";
-  let parsed = raw;
-  try { parsed = JSON.parse(raw); } catch {}
-  const key = process.env.SECRET_KEY || "a2-group103-jwt-secret";
-  CACHED_JWT_SECRET = typeof parsed === "string" ? parsed : parsed[key];
-
-  if (!CACHED_JWT_SECRET) throw new Error("Secret value missing (check SECRET_KEY matches the key in Secrets Manager)");
-  return CACHED_JWT_SECRET;
+async function loadSecret() {
+  if (!process.env.SECRET_NAME) return;
+  const r = await sm.send(new GetSecretValueCommand({ SecretId: process.env.SECRET_NAME }));
+  const raw = r.SecretString ?? "";
+  try {
+    const obj = JSON.parse(raw);
+    SECRET_API_KEY = obj[process.env.SECRET_KEY] ?? "";
+  } catch {
+    SECRET_API_KEY = raw; // if you ever store a raw string instead of JSON
+  }
+  console.log("SecretsManager loaded:", process.env.SECRET_NAME, "key:", process.env.SECRET_KEY, "len:", SECRET_API_KEY?.length || 0);
 }
 
-
+async function ensureSecretLoaded() {
+    if (!SECRET_API_KEY) await loadSecret();
+    return SECRET_API_KEY;
+  }  
 
 // basic app setup
 const __filename = fileURLToPath(import.meta.url);
@@ -187,9 +185,8 @@ app.post('/api/v1/upload-url', requireAuth, express.json(), async (req, res) => 
         const { sub: ownerSub = 'unknown', 'cognito:username': username = 'unknown' } = jwtPayload(req);
   
         const assetId = randomUUID();
-        const secret = await loadJwtSecret();
+        const secret = await ensureSecretLoaded();
         const sig = createHmac("sha256", secret).update(assetId).digest("hex");
-        
         const key = `uploads/${assetId}`;
         const now = new Date().toISOString();
     
@@ -414,6 +411,13 @@ app.get("/api/v1/me/videos", requireAuth, async (req, res) => {
   }
 });
 
+app.get("/api/v1/secret-demo", (req, res) => {
+    const given = req.headers["x-api-key"] || "";
+    if (!SECRET_API_KEY || given !== SECRET_API_KEY) {
+      return res.status(403).json({ success:false, error:{ message:"Forbidden (bad API key)" }});
+    }
+    return res.json({ success:true, data:{ message:"Secret unlocked ✔" }});
+  });
 app.get("/api/v1/config", (req, res) => {
     const base = process.env.APP_BASE_URL || `http://${req.headers.host}`;
     res.json({ success: true, data: { appBaseUrl: base } });
@@ -422,6 +426,8 @@ app.get("/api/v1/config", (req, res) => {
 app.get("/healthz", (_req, res) => res.json({ ok: true }));
 
 console.log("COGNITO_CLIENT_ID =", COGNITO_CLIENT_ID || "(missing)");
-console.log("Using:", { AWS_REGION, BUCKET_UPLOADS, BUCKET_OUTPUTS, DDB_TABLE_VIDEOS, DDB_TABLE_JOBS, DDB_GSI_VIDEOS_BY_OWNER });
-
-app.listen(PORT, () => console.log(`VideoLab API listening on port ${PORT}`));
+(async () => {
+  await loadSecret().catch(e => console.error("SecretsManager init failed:", e?.message || e));
+  console.log("Using:", { AWS_REGION, BUCKET_UPLOADS, BUCKET_OUTPUTS, DDB_TABLE_VIDEOS, DDB_TABLE_JOBS, DDB_GSI_VIDEOS_BY_OWNER });
+  app.listen(PORT, () => console.log(`VideoLab API listening on port ${PORT}`));
+})();
