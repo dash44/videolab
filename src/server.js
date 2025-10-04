@@ -4,13 +4,16 @@ import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
 import multer from "multer";
-import { randomUUID } from "crypto";
+import { randomUUID, createHmac } from "crypto";
 
 // AWS SDK v3
 import { S3Client, PutObjectCommand, CopyObjectCommand } from "@aws-sdk/client-s3";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, PutCommand, UpdateCommand, GetCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { SecretsManagerClient, GetSecretValueCommand } from "@aws-sdk/client-secrets-manager";
+import crypto from "crypto";
+
 
 
 // env + aws clients
@@ -28,6 +31,26 @@ const {
 const s3 = new S3Client({ region: AWS_REGION });
 const ddb  = new DynamoDBClient({ region: AWS_REGION });
 const ddbc = DynamoDBDocumentClient.from(ddb);
+const secrets = new SecretsManagerClient({ region: AWS_REGION });
+
+let CACHED_JWT_SECRET = null;
+
+async function loadJwtSecret() {
+  if (CACHED_JWT_SECRET) return CACHED_JWT_SECRET;
+
+  const SecretId = process.env.SECRET_NAME || "a2-group103-secret";
+  const r = await secrets.send(new GetSecretValueCommand({ SecretId }));
+  const raw = r.SecretString || "";
+  let parsed = raw;
+  try { parsed = JSON.parse(raw); } catch {}
+  const key = process.env.SECRET_KEY || "a2-group103-jwt-secret";
+  CACHED_JWT_SECRET = typeof parsed === "string" ? parsed : parsed[key];
+
+  if (!CACHED_JWT_SECRET) throw new Error("Secret value missing (check SECRET_KEY matches the key in Secrets Manager)");
+  return CACHED_JWT_SECRET;
+}
+
+
 
 // basic app setup
 const __filename = fileURLToPath(import.meta.url);
@@ -164,6 +187,9 @@ app.post('/api/v1/upload-url', requireAuth, express.json(), async (req, res) => 
         const { sub: ownerSub = 'unknown', 'cognito:username': username = 'unknown' } = jwtPayload(req);
   
         const assetId = randomUUID();
+        const secret = await loadJwtSecret();
+        const sig = createHmac("sha256", secret).update(assetId).digest("hex");
+        
         const key = `uploads/${assetId}`;
         const now = new Date().toISOString();
     
@@ -192,7 +218,7 @@ app.post('/api/v1/upload-url', requireAuth, express.json(), async (req, res) => 
             Metadata: { assetId, ownerSub, username, originalName: filename }
         });
         const putUrl = await getSignedUrl(s3, cmd, { expiresIn: 900 });
-    
+        res.setHeader("x-vl-signature", sig);
         return res.json({ success:true, data:{ assetId, key, putUrl }});
         } catch (err) {
         console.error('upload-url error:', err);
@@ -386,6 +412,11 @@ app.get("/api/v1/me/videos", requireAuth, async (req, res) => {
   } catch (e) {
     return res.status(500).json({ success: false, error: { message: e.message } });
   }
+});
+
+app.get("/api/v1/config", (req, res) => {
+    const base = process.env.APP_BASE_URL || `http://${req.headers.host}`;
+    res.json({ success: true, data: { appBaseUrl: base } });
 });
 
 app.get("/healthz", (_req, res) => res.json({ ok: true }));
