@@ -165,6 +165,7 @@ app.post('/api/v1/upload-url', requireAuth, express.json(), async (req, res) => 
   
         const assetId = randomUUID();
         const key = `uploads/${assetId}`;
+        const now = new Date().toISOString();
     
         // record the intent in DynamoDB (status "uploading")
         await ddbc.send(new PutCommand({
@@ -176,7 +177,9 @@ app.post('/api/v1/upload-url', requireAuth, express.json(), async (req, res) => 
             originalName: filename,
             contentType,
             status: 'uploading',
-            createdAt: Date.now(),
+            createdAt: now,
+            s3Bucket: BUCKET_UPLOADS,
+            s3Key: key,
             }
         }));
     
@@ -208,7 +211,7 @@ app.post('/api/v1/upload-complete', requireAuth, express.json(), async (req, res
             Key: { assetId },
             UpdateExpression: 'SET #st = :s, uploadedAt = :t',
             ExpressionAttributeNames: { '#st': 'status' },
-            ExpressionAttributeValues: { ':s':'uploaded', ':t': Date.now() }
+            ExpressionAttributeValues: { ':s':'uploaded', ':t': new Date().toISOString() }
         }));
     
         return res.json({ success:true });
@@ -242,7 +245,7 @@ app.post("/api/v1/transcode", requireAuth, async (req, res) => {
     if (!v.Item) return res.status(404).json({ success: false, error: { message: "video not found" } });
 
     const jobId = randomUUID();
-    const srcKey = v.Item.s3Key; // uploads/<assetId>
+    const srcKey = v.Item.s3Key || `uploads/${assetId}`;
     const outKey = `outputs/${assetId}.${preset}p.mp4`;
 
     // write job item (queued)
