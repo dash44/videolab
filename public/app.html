@@ -57,7 +57,11 @@
 document.addEventListener('DOMContentLoaded', () => {
   const $ = id => document.getElementById(id);
   const log = (t) => { const el = $('log'); if (el) el.textContent = t; };
-
+  const existing = localStorage.getItem('idToken');
+  if (!existing) {
+    window.location.replace('/'); // serves index.html
+    return; // stop running the rest of app.js
+  }
   // status
   const setStatus = (t) => { const el = $('status'); if (el) el.textContent = t; };
   setStatus(localStorage.getItem('idToken') ? 'Logged in (token in storage)' : 'Not logged in');
@@ -155,8 +159,8 @@ document.addEventListener('DOMContentLoaded', () => {
     alert('ID token copied');
   });
   $('btn-logout')?.addEventListener('click', () => {
-    localStorage.removeItem('idToken');
-    setStatus('Not logged in');
+    ['idToken','accessToken','refreshToken','username'].forEach(k => localStorage.removeItem(k));
+    window.location.replace('/'); // or '/index.html' if you prefer explicit
   });
 });
 </script>
