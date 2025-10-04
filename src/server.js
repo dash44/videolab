@@ -258,7 +258,7 @@ app.post("/api/v1/transcode", requireAuth, async (req, res) => {
           ownerSub,
           preset,
           status: "queued",
-          createdAt: Date.now(),
+          createdAt: new Date().toISOString(),
         },
       })
     );

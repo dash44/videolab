@@ -37,104 +37,128 @@
       <input type="file" id="file">
       <button id="btn-upload">Upload</button>
     </div>
-    <pre id="out" class="msg" style="margin-top:10px"></pre>
+    <pre id="log" class="msg" style="margin-top:10px"></pre>
   </div>
 
   <div id="xcode" class="card" style="display:none; margin-top:14px">
     <div class="muted" style="margin-bottom:6px">
       Asset ready: <code id="asset-id"></code>
     </div>
-    <div style="display:flex; gap:8px; margin-bottom:10px">
+    <div class="row" style="gap:8px; margin-bottom:10px">
       <button class="ghost" id="p-360">360p</button>
       <button class="ghost" id="p-720">720p</button>
       <button class="ghost" id="p-1080">1080p</button>
     </div>
     <pre id="x-status" class="msg"></pre>
   </div>
-
-  <div id="next" class="card" style="display:none; margin-top:14px">
-    <div class="muted">Asset ready: <code id="next-asset"></code></div>
-  </div>
 </div>
 
 <script>
-  document.addEventListener('DOMContentLoaded', () => {
-    const $ = (id) => document.getElementById(id);
-  
-    // ...keep the rest of your code...
-  
-    const btn = $('btn-upload');
-    const fileInput = $('file');
-    const out  = $('out');
-  
-    btn?.addEventListener('click', async (e) => {
-      e.preventDefault();
-      out.textContent = '';
-  
-      try {
-        const tok = localStorage.getItem('idToken');
-        if (!tok) throw new Error('Not logged in');
-  
-        const file = fileInput?.files?.[0];
-        if (!file) throw new Error('Pick a file first');
-  
-        btn.disabled = true;
-        const label = btn.textContent;
-        btn.textContent = 'Uploading…';
-  
-        // 1) Ask server for a presigned PUT URL
-        const r1 = await fetch('/api/v1/upload-url', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok },
-          body: JSON.stringify({
-            filename: file.name,
-            contentType: file.type || 'application/octet-stream'   // <-- important
-          })
-        });
-        const j1 = await r1.json().catch(()=>({}));
-        if (!r1.ok || j1.success === false) {
-          throw new Error(j1?.error?.message || r1.statusText || 'upload-url failed');
-        }
-        const { putUrl, assetId, key } = j1.data;
-  
-        // 2) Upload the file directly to S3 with the presigned URL
-        const r2 = await fetch(putUrl, {
-          method: 'PUT',
-          headers: { 'Content-Type': file.type || 'application/octet-stream' },
-          body: file
-        });
-        if (!r2.ok) {
-          const t = await r2.text().catch(()=> '');
-          throw new Error('S3 PUT failed: ' + r2.status + ' ' + t.slice(0,160));
-        }
-  
-        // 3) Tell server the upload is complete so it can flip DynamoDB status
-        const r3 = await fetch('/api/v1/upload-complete', {
-          method: 'POST',
-          headers: { 'Content-Type':'application/json', 'Authorization':'Bearer ' + tok },
-          body: JSON.stringify({ assetId })
-        });
-        const j3 = await r3.json().catch(()=>({}));
-        if (!r3.ok || j3.success === false) {
-          throw new Error(j3?.error?.message || r3.statusText || 'upload-complete failed');
-        }
-  
-        out.textContent = 'Upload ok\n' + JSON.stringify({ assetId, key }, null, 2);
-  
-        // Continue the demo: reveal transcode panel by reloading with ?asset=
-        window.location.replace('/app.html?asset=' + encodeURIComponent(assetId));
-  
-        btn.textContent = label;
-        btn.disabled = false;
-      } catch (err) {
-        out.textContent = 'Upload failed: ' + (err?.message || err);
-        console.error(err);
-        btn.textContent = 'Upload';
-        btn.disabled = false;
-      }
+document.addEventListener('DOMContentLoaded', () => {
+  const $ = id => document.getElementById(id);
+  const log = (t) => { const el = $('log'); if (el) el.textContent = t; };
+
+  // status
+  const setStatus = (t) => { const el = $('status'); if (el) el.textContent = t; };
+  setStatus(localStorage.getItem('idToken') ? 'Logged in (token in storage)' : 'Not logged in');
+
+  // helper for JSON POST with bearer token
+  async function api(path, body) {
+    const id = localStorage.getItem('idToken') || '';
+    const r = await fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json', 'Authorization':'Bearer ' + id },
+      body: JSON.stringify(body || {})
     });
+    const j = await r.json().catch(()=>({}));
+    if (!r.ok || j.success === false) throw new Error(j?.error?.message || r.statusText || 'Request failed');
+    return j;
+  }
+
+  // if redirected with ?asset=... show the transcode panel
+  const params = new URLSearchParams(location.search);
+  const assetParam = params.get('asset');
+  if (assetParam) {
+    $('xcode').style.display = 'block';
+    $('asset-id').textContent = assetParam;
+  }
+
+  // upload (presigned flow)
+  $('btn-upload')?.addEventListener('click', async (e) => {
+    e.preventDefault();
+    log('');
+    try {
+      const tok = localStorage.getItem('idToken');
+      if (!tok) throw new Error('Not logged in');
+
+      const f = $('file')?.files?.[0];
+      if (!f) throw new Error('Pick a file first');
+
+      const btn = $('btn-upload');
+      const orig = btn.textContent;
+      btn.disabled = true; btn.textContent = 'Preparing…';
+
+      // 1) get presigned URL
+      const up1 = await api('/api/v1/upload-url', { filename: f.name, contentType: f.type || 'application/octet-stream' });
+
+      // 2) PUT directly to S3
+      btn.textContent = 'Uploading…';
+      const put = await fetch(up1.data.putUrl, { method:'PUT', headers:{ 'Content-Type': f.type || 'application/octet-stream' }, body: f });
+      if (!put.ok) throw new Error('S3 upload failed: ' + put.statusText);
+
+      // 3) tell server we're done
+      await api('/api/v1/upload-complete', { assetId: up1.data.assetId });
+
+      // 4) show JSON then redirect so xcode panel appears
+      log(JSON.stringify(up1, null, 2));
+      location.replace('/app.html?asset=' + encodeURIComponent(up1.data.assetId));
+
+      btn.textContent = orig; btn.disabled = false;
+    } catch (err) {
+      log('Upload failed: ' + (err?.message || err));
+      const btn = $('btn-upload'); btn.textContent = 'Upload'; btn.disabled = false;
+      console.error(err);
+    }
   });
-  </script>
-  
+
+  // transcode
+  async function startTranscode(preset) {
+    $('x-status').textContent = 'Submitting job…';
+    const assetId = $('asset-id').textContent;
+    const { data } = await api('/api/v1/transcode', { assetId, preset });
+    $('x-status').textContent = 'Job ' + data.jobId + ' queued (' + preset + '). Waiting…';
+
+    const poll = async () => {
+      const r = await fetch('/api/v1/jobs/' + data.jobId, {
+        headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('idToken')||'') }
+      });
+      const j = await r.json();
+      if (!r.ok || j.success === false) throw new Error(j?.error?.message || 'Job check failed');
+
+      if (j.data.status === 'complete') {
+        $('x-status').textContent = 'Done ✅ Output: ' + j.data.outputPath;
+      } else if (j.data.status === 'error') {
+        $('x-status').textContent = 'Failed ❌ ' + (j.data.message || '');
+      } else {
+        setTimeout(poll, 1200);
+      }
+    };
+    setTimeout(poll, 900);
+  }
+  ['360','720','1080'].forEach(h => $('p-' + h)?.addEventListener('click', () => startTranscode(h)));
+
+  // copy + logout
+  $('btn-copy')?.addEventListener('click', async () => {
+    const id = localStorage.getItem('idToken') || '';
+    if (!id) return alert('No token in storage');
+    await navigator.clipboard.writeText(id);
+    alert('ID token copied');
+  });
+  $('btn-logout')?.addEventListener('click', () => {
+    localStorage.removeItem('idToken');
+    setStatus('Not logged in');
+  });
+});
+</script>
 </body>
 </html>
