@@ -1,225 +1,307 @@
-// src/server.js
 import "dotenv/config";
 import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
-import crypto from "crypto";
+import fs from "fs";
+import multer from "multer";
+import { randomUUID } from "crypto";
 
 // AWS SDK v3
-import {
-  S3Client, PutObjectCommand, CopyObjectCommand, HeadObjectCommand
-} from "@aws-sdk/client-s3";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { S3Client, PutObjectCommand, CopyObjectCommand } from "@aws-sdk/client-s3";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, PutCommand, GetCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+import { DynamoDBDocumentClient, PutCommand, UpdateCommand, GetCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";
 
-// Your existing Cognito routes
-import cogRoutes from "./routes/auth.routes.js";
+// env + aws clients
+const {
+  PORT = 8080,
+  AWS_REGION,
+  BUCKET_UPLOADS,
+  BUCKET_OUTPUTS,
+  DDB_TABLE_VIDEOS,
+  DDB_TABLE_JOBS,
+  DDB_GSI_VIDEOS_BY_OWNER = "ByOwner", // you said this exists already
+  COGNITO_CLIENT_ID, // just to confirm .env is loading
+} = process.env;
 
+const s3 = new S3Client({ region: AWS_REGION });
+const ddbc = DynamoDBDocumentClient.from(new DynamoDBClient({ region: AWS_REGION }));
+
+// basic app setup
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// env
-const PORT = process.env.PORT || 8080;
-const REGION = process.env.AWS_REGION || "ap-southeast-2";
-
-const BUCKET_UPLOADS  = process.env.BUCKET_UPLOADS;   // a2-group103-uploads
-const BUCKET_OUTPUTS  = process.env.BUCKET_OUTPUTS;   // a2-group103-outputs
-
-const TBL_VIDEOS = process.env.DDB_TABLE_VIDEOS;      // a2-group103-videoTable
-const TBL_JOBS   = process.env.DDB_TABLE_JOBS;        // a2-group103-jobsTable
-const GSI_BY_OWNER = process.env.DDB_GSI_VIDEOS_BY_OWNER || "ByOwner"; // optional
-
-console.log("COGNITO_CLIENT_ID =", process.env.COGNITO_CLIENT_ID || "(missing)");
-if (!BUCKET_UPLOADS || !BUCKET_OUTPUTS) console.warn("WARNING: BUCKET_UPLOADS/BUCKET_OUTPUTS not set");
-if (!TBL_VIDEOS || !TBL_JOBS) console.warn("WARNING: DDB tables not set");
-
-// aws clients
-const s3  = new S3Client({ region: REGION });
-const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({ region: REGION }));
-
-// app
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// tiny request logger (so you see requests again)
+// tiny logger so you see requests
 app.use((req, res, next) => {
   const t0 = Date.now();
-  res.on("finish", () => console.log(`${req.method} ${req.url} -> ${res.statusCode} ${Date.now()-t0}ms`));
+  res.on("finish", () => {
+    console.log(`${req.method} ${req.url} -> ${res.statusCode} ${Date.now() - t0}ms`);
+  });
   next();
 });
 
-// ---- auth guard (minimal for demo)
+// auth helpers
 function requireAuth(req, res, next) {
   const h = req.headers.authorization || "";
-  if (!h.startsWith("Bearer ")) return res.status(401).json({ success:false, error:{ message:"Missing token" } });
+  if (!h.startsWith("Bearer ")) return res.status(401).json({ success: false, error: { message: "Missing token" } });
   next();
 }
 
-// (demo) extract username from the JWT **without** verifying (ok for A2 demo)
-function usernameFromAuth(req) {
+// decode (not verify) JWT just to extract claims for demo
+function getClaims(req) {
   try {
-    const tok = (req.headers.authorization || "").slice("Bearer ".length);
-    const [, payloadB64] = tok.split(".");
-    const norm = payloadB64.replace(/-/g, "+").replace(/_/g, "/");
-    const json = JSON.parse(Buffer.from(norm, "base64").toString("utf8"));
-    return json["cognito:username"] || json.username || json.email || "user";
-  } catch { return "user"; }
+    const token = (req.headers.authorization || "").split(" ")[1] || "";
+    const payload = JSON.parse(Buffer.from(token.split(".")[1], "base64").toString("utf8"));
+    return {
+      sub: payload.sub,
+      username: payload["cognito:username"] || payload.username || payload.sub,
+      email: payload.email,
+    };
+  } catch {
+    return {};
+  }
 }
 
-// static UI
+// static files (UI)
 const publicDir = path.join(__dirname, "../public");
 app.use(express.static(publicDir));
 app.get("/", (_req, res) => res.sendFile(path.join(publicDir, "index.html")));
 app.get(["/app", "/app/"], (_req, res) => res.sendFile(path.join(publicDir, "app.html")));
 
-// Cognito endpoints you already have
+// cognito routes (you already have these)
+import cogRoutes from "./routes/auth.routes.js";
 app.use("/cog", cogRoutes);
 
-// helpers
-const uid = () => crypto.randomBytes(16).toString("hex");
+// UPLOAD -> S3 + video metadata -> DynamoDB
+const uploadsDir = path.join(__dirname, "../uploads"); // temp landing for multer
+fs.mkdirSync(uploadsDir, { recursive: true });
+const upload = multer({ dest: uploadsDir });
 
-// S3 PRESIGNED UPLOAD 
-
-// Ask server for a pre-signed PUT URL; browser will PUT directly to S3 uploads bucket
-app.post("/api/v1/upload-url", requireAuth, async (req, res) => {
+// NOTE: keep auth so we can set ownerSub from the token
+app.post("/api/v1/upload", requireAuth, upload.single("file"), async (req, res) => {
   try {
-    const { filename, mime } = req.body || {};
-    if (!filename) return res.status(400).json({ success:false, error:{message:"filename required"} });
+    if (!req.file) return res.status(400).json({ success: false, error: { message: "No file" } });
 
-    const ext = (filename.split(".").pop() || "bin").toLowerCase();
-    const key = `uploads/${uid()}-${Date.now()}.${ext}`;
+    const claims = getClaims(req);
+    const ownerSub = claims.sub || "unknown";
+    const assetId = req.file.filename; // reuse multer id as your assetId (PK)
+    const key = `uploads/${assetId}`;  // simple mapping, one key per asset
 
-    const cmd = new PutObjectCommand({
-      Bucket: BUCKET_UPLOADS,
-      Key: key,
-      ContentType: mime || "application/octet-stream",
+    // 1) put object to S3 uploads bucket
+    await s3.send(
+      new PutObjectCommand({
+        Bucket: BUCKET_UPLOADS,
+        Key: key,
+        Body: fs.createReadStream(req.file.path),
+        ContentType: req.file.mimetype || "application/octet-stream",
+      })
+    );
+    // remove temp file
+    fs.unlink(req.file.path, () => {});
+
+    // 2) write video metadata to DynamoDB (PK = assetId; GSI pk = ownerSub)
+    const now = new Date().toISOString();
+    await ddbc.send(
+      new PutCommand({
+        TableName: DDB_TABLE_VIDEOS,
+        Item: {
+          assetId,                 // PK (matches your table)
+          ownerSub,                // GSI partition key (matches your index)
+          ownerUsername: claims.username,
+          originalName: req.file.originalname,
+          s3Bucket: BUCKET_UPLOADS,
+          s3Key: key,
+          size: req.file.size,
+          status: "uploaded",
+          createdAt: now,          // GSI sort key if you use createdAt there
+          outputs: {},             // we’ll fill this as jobs complete
+        },
+        // optional: condition to avoid overwrite:
+        // ConditionExpression: "attribute_not_exists(assetId)"
+      })
+    );
+
+    return res.json({
+      success: true,
+      data: {
+        assetId,
+        bucket: BUCKET_UPLOADS,
+        key,
+        createdAt: now,
+      },
     });
-    const uploadUrl = await getSignedUrl(s3, cmd, { expiresIn: 900 }); // 15m
-
-    res.json({ success:true, data:{ key, uploadUrl }});
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ success:false, error:{ message:"Failed to create upload URL" }});
+    console.error("upload error:", e);
+    return res.status(500).json({ success: false, error: { message: e.message || "Upload failed" } });
   }
 });
 
-// VIDEOS METADATA (DynamoDB) 
-
-// After client uploads to S3, register the object as a video row
-app.post("/api/v1/videos", requireAuth, async (req, res) => {
-  try {
-    const { key, originalName } = req.body || {};
-    if (!key) return res.status(400).json({ success:false, error:{ message:"key required" } });
-
-    const videoId = uid();
-    const owner = usernameFromAuth(req);
-
-    const item = {
-      videoId,
-      owner,                       // supports your GSI "ByOwner"
-      bucket: BUCKET_UPLOADS,
-      s3Key: key,
-      originalName: originalName || key.split("/").pop(),
-      status: "uploaded",
-      createdAt: Date.now(),
-    };
-
-    await ddb.send(new PutCommand({ TableName: TBL_VIDEOS, Item: item }));
-    res.json({ success:true, data:item });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ success:false, error:{ message:"failed to save video" }});
-  }
+// serve uploaded/processed files back if needed (handy for demo)
+app.get("/uploads/:name", (req, res) => {
+  const f = path.join(uploadsDir, req.params.name);
+  if (!fs.existsSync(f)) return res.status(404).send("Not found");
+  res.sendFile(f);
 });
 
-// TRANSCODE JOBS (DynamoDB + S3 copy uploads -> outputs) ==========
+// JOBS: simulate “transcode” by S3 copy to outputs bucket
+const jobsMem = new Map(); // quick in-memory mirror for fast polling
 
 app.post("/api/v1/transcode", requireAuth, async (req, res) => {
+  const { assetId, preset } = req.body || {};
+  if (!assetId || !preset) {
+    return res.status(400).json({ success: false, error: { message: "assetId and preset required" } });
+  }
+  const claims = getClaims(req);
+  const ownerSub = claims.sub || "unknown";
+
   try {
-    const { assetId, preset } = req.body || {};
-    if (!assetId || !preset) return res.status(400).json({ success:false, error:{ message:"assetId & preset required" } });
+    // read the video item (optional, to confirm it exists)
+    const v = await ddbc.send(new GetCommand({ TableName: DDB_TABLE_VIDEOS, Key: { assetId } }));
+    if (!v.Item) return res.status(404).json({ success: false, error: { message: "video not found" } });
 
-    // assetId is the S3 key in uploads bucket
-    const srcKey = assetId;
-    const dot = srcKey.lastIndexOf(".");
-    const base = dot > -1 ? srcKey.slice(0, dot) : srcKey;
-    const ext  = dot > -1 ? srcKey.slice(dot) : ".mp4";
-    const outKey = `${base}-${preset}p${ext}`;
+    const jobId = randomUUID();
+    const srcKey = v.Item.s3Key; // uploads/<assetId>
+    const outKey = `outputs/${assetId}.${preset}p.mp4`;
 
-    const jobId = uid();
-    const item = {
-      jobId,
-      srcBucket: BUCKET_UPLOADS,
-      srcKey,
-      outBucket: BUCKET_OUTPUTS,
-      outKey,
-      preset: String(preset),
-      status: "queued",
-      createdAt: Date.now(),
-    };
+    // write job item (queued)
+    await ddbc.send(
+      new PutCommand({
+        TableName: DDB_TABLE_JOBS,
+        Item: {
+          jobId,            // PK in jobs table
+          videoId: assetId,
+          ownerSub,
+          preset,
+          status: "queued",
+          createdAt: Date.now(),
+        },
+      })
+    );
+    jobsMem.set(jobId, { status: "queued", preset, assetId });
 
-    await ddb.send(new PutCommand({ TableName: TBL_JOBS, Item: item }));
-    return res.json({ success:true, data:{ jobId }});
+    // kick async “transcode”: S3 copy from uploads bucket to outputs bucket
+    (async () => {
+      try {
+        // mark running
+        await ddbc.send(
+          new UpdateCommand({
+            TableName: DDB_TABLE_JOBS,
+            Key: { jobId },
+            UpdateExpression: "SET #s = :s, startedAt = :t",
+            ExpressionAttributeNames: { "#s": "status" },
+            ExpressionAttributeValues: { ":s": "running", ":t": Date.now() },
+          })
+        );
+        jobsMem.set(jobId, { status: "running", preset, assetId });
+
+        // Copy object (acts as our "transcode" for demo)
+        await s3.send(
+          new CopyObjectCommand({
+            Bucket: BUCKET_OUTPUTS,
+            Key: outKey,
+            CopySource: `${BUCKET_UPLOADS}/${srcKey}`,
+            ContentType: "video/mp4",
+          })
+        );
+
+        // mark complete
+        await ddbc.send(
+          new UpdateCommand({
+            TableName: DDB_TABLE_JOBS,
+            Key: { jobId },
+            UpdateExpression: "SET #s = :s, finishedAt = :t, outputKey = :o",
+            ExpressionAttributeNames: { "#s": "status" },
+            ExpressionAttributeValues: { ":s": "complete", ":t": Date.now(), ":o": outKey },
+          })
+        );
+        jobsMem.set(jobId, { status: "complete", outputPath: `/s3/${BUCKET_OUTPUTS}/${outKey}` });
+
+        // patch the video item with outputs map and status
+        await ddbc.send(
+          new UpdateCommand({
+            TableName: DDB_TABLE_VIDEOS,
+            Key: { assetId },
+            UpdateExpression:
+              "SET #out.#p = :k, #st = :st",
+            ExpressionAttributeNames: {
+              "#out": "outputs",
+              "#p": preset,
+              "#st": "status",
+            },
+            ExpressionAttributeValues: {
+              ":k": outKey,
+              ":st": "ready",
+            },
+          })
+        );
+      } catch (err) {
+        console.error("transcode err:", err);
+        await ddbc.send(
+          new UpdateCommand({
+            TableName: DDB_TABLE_JOBS,
+            Key: { jobId },
+            UpdateExpression: "SET #s = :s, error = :e",
+            ExpressionAttributeNames: { "#s": "status" },
+            ExpressionAttributeValues: { ":s": "error", ":e": String(err?.message || err) },
+          })
+        );
+        jobsMem.set(jobId, { status: "error", message: String(err?.message || err) });
+      }
+    })();
+
+    return res.json({ success: true, data: { jobId } });
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ success:false, error:{ message:"failed to create job" }});
+    console.error("transcode route error:", e);
+    return res.status(500).json({ success: false, error: { message: e.message || "Transcode failed" } });
   }
 });
 
-// Poll: after ~8s, perform S3 copy and mark complete
 app.get("/api/v1/jobs/:id", requireAuth, async (req, res) => {
+  const id = req.params.id;
+  const mem = jobsMem.get(id);
+  if (mem) return res.json({ success: true, data: mem });
+
   try {
-    const { Item: job } = await ddb.send(new GetCommand({
-      TableName: TBL_JOBS,
-      Key: { jobId: req.params.id }
-    }));
-    if (!job) return res.status(404).json({ success:false, error:{ message:"job not found" } });
+    const r = await ddbc.send(new GetCommand({ TableName: DDB_TABLE_JOBS, Key: { jobId: id } }));
+    if (!r.Item) return res.status(404).json({ success: false, error: { message: "job not found" } });
 
-    if (job.status === "queued" && Date.now() - job.createdAt > 8000) {
-      try {
-        // ensure source exists
-        await s3.send(new HeadObjectCommand({ Bucket: job.srcBucket, Key: job.srcKey }));
-
-        // simulate "transcode": copy to outputs bucket with -{preset}p suffix
-        await s3.send(new CopyObjectCommand({
-          Bucket: job.outBucket,
-          CopySource: `/${job.srcBucket}/${job.srcKey}`,
-          Key: job.outKey,
-          MetadataDirective: "REPLACE",
-        }));
-
-        await ddb.send(new UpdateCommand({
-          TableName: TBL_JOBS,
-          Key: { jobId: job.jobId },
-          UpdateExpression: "SET #s = :done, finishedAt = :t",
-          ExpressionAttributeNames: { "#s": "status" },
-          ExpressionAttributeValues: { ":done": "complete", ":t": Date.now() },
-        }));
-        job.status = "complete";
-        job.finishedAt = Date.now();
-      } catch (err) {
-        console.error(err);
-        await ddb.send(new UpdateCommand({
-          TableName: TBL_JOBS,
-          Key: { jobId: job.jobId },
-          UpdateExpression: "SET #s = :err, message = :m",
-          ExpressionAttributeNames: { "#s": "status" },
-          ExpressionAttributeValues: { ":err": "error", ":m": String(err?.message || err) },
-        }));
-        job.status = "error";
-        job.message = String(err?.message || err);
-      }
-    }
-
-    res.json({ success:true, data: job });
+    const data = {
+      status: r.Item.status,
+      outputPath: r.Item.outputKey ? `/s3/${BUCKET_OUTPUTS}/${r.Item.outputKey}` : null,
+      message: r.Item.error || null,
+    };
+    return res.json({ success: true, data });
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ success:false, error:{ message:"job lookup failed" }});
+    return res.status(500).json({ success: false, error: { message: e.message } });
+  }
+});
+
+// optional: list my videos by GSI (ownerSub)
+app.get("/api/v1/me/videos", requireAuth, async (req, res) => {
+  const { sub } = getClaims(req);
+  try {
+    const r = await ddbc.send(
+      new QueryCommand({
+        TableName: DDB_TABLE_VIDEOS,
+        IndexName: DDB_GSI_VIDEOS_BY_OWNER,
+        KeyConditionExpression: "ownerSub = :o",
+        ExpressionAttributeValues: { ":o": sub },
+        ScanIndexForward: false,
+        Limit: 20,
+      })
+    );
+    return res.json({ success: true, data: r.Items || [] });
+  } catch (e) {
+    return res.status(500).json({ success: false, error: { message: e.message } });
   }
 });
 
 app.get("/healthz", (_req, res) => res.json({ ok: true }));
+
+console.log("COGNITO_CLIENT_ID =", COGNITO_CLIENT_ID || "(missing)");
+console.log("Using:", { AWS_REGION, BUCKET_UPLOADS, BUCKET_OUTPUTS, DDB_TABLE_VIDEOS, DDB_TABLE_JOBS, DDB_GSI_VIDEOS_BY_OWNER });
 
 app.listen(PORT, () => console.log(`VideoLab API listening on port ${PORT}`));
