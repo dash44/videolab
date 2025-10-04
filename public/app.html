@@ -58,135 +58,83 @@
 </div>
 
 <script>
-document.addEventListener('DOMContentLoaded', () => {
-  const $ = (id) => document.getElementById(id);
-
-  // status
-  const setStatus = (t) => { const el = $('status'); if (el) el.textContent = t; };
-  setStatus(localStorage.getItem('idToken') ? 'Logged in (token in storage)' : 'Not logged in');
-
-  // JSON POST with bearer
-  async function api(path, body) {
-    const id = localStorage.getItem('idToken') || '';
-    const r = await fetch(path, {
-      method: 'POST',
-      headers: { 'Content-Type':'application/json', 'Authorization':'Bearer ' + id },
-      body: JSON.stringify(body || {})
-    });
-    const j = await r.json().catch(()=>({}));
-    if (!r.ok || j.success === false) {
-      throw new Error(j?.error?.message || r.statusText || 'Request failed');
-    }
-    return j;
-  }
-
-  // reveal panels if ?asset=...
-  const params = new URLSearchParams(location.search);
-  const assetParam = params.get('asset');
-  if (assetParam) {
-    $('next').style.display = 'block';
-    $('next-asset').textContent = assetParam;
-    $('xcode').style.display = 'block';
-    $('asset-id').textContent = assetParam;
-  }
-
-  // upload via pre-signed URL
-  const btn = $('btn-upload');
-  const file = $('file');
-  const out  = $('out');
-
-  btn?.addEventListener('click', async (e) => {
-    e.preventDefault();
-    out.textContent = '';
-
-    try {
-      const tok = localStorage.getItem('idToken');
-      if (!tok) throw new Error('Not logged in');
-
-      const f = file?.files?.[0];
-      if (!f) throw new Error('Pick a file first');
-
-      btn.disabled = true;
-      const originalText = btn.textContent;
-      btn.textContent = 'Requesting URL…';
-
-      // 1) ask server for presigned PUT
-      const { data: up } = await api('/api/v1/upload-url', {
-        filename: f.name,
-        mime: f.type || 'application/octet-stream'
-      });
-
-      // 2) PUT directly to S3
-      btn.textContent = 'Uploading…';
-      const putRes = await fetch(up.uploadUrl, {
-        method: 'PUT',
-        headers: { 'Content-Type': f.type || 'application/octet-stream' },
-        body: f
-      });
-      if (!putRes.ok) throw new Error('S3 upload failed: ' + putRes.status + ' ' + putRes.statusText);
-
-      // 3) register video metadata
-      btn.textContent = 'Registering…';
-      const reg = await api('/api/v1/videos', { key: up.key, originalName: f.name });
-
-      out.textContent = JSON.stringify({ upload: up, registered: reg.data }, null, 2);
-
-      // 4) go to transcode step carrying the S3 key
-      window.location.replace('/app.html?asset=' + encodeURIComponent(up.key));
-
-      btn.textContent = originalText;
-      btn.disabled = false;
-    } catch (err) {
-      out.textContent = 'Upload failed: ' + (err?.message || err);
-      btn.disabled = false;
-      btn.textContent = 'Upload';
-      console.error('upload error:', err);
-    }
-  });
-
-  // transcode flow 
-  async function startTranscode(preset) {
-    const aid = $('asset-id').textContent;
-    if (!aid) return;
-
-    $('x-status').textContent = 'Submitting job...';
-    const { data } = await api('/api/v1/transcode', { assetId: aid, preset });
-
-    $('x-status').textContent = 'Job ' + data.jobId + ' queued (' + preset + '). Waiting...';
-
-    const poll = async () => {
-      const r = await fetch('/api/v1/jobs/' + data.jobId, {
-        headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('idToken')||'') }
-      });
-      const j = await r.json();
-      if (!r.ok || j.success === false) throw new Error(j?.error?.message || 'Job check failed');
-
-      if (j.data.status === 'complete') {
-        const s3path = 's3://' + j.data.outBucket + '/' + j.data.outKey;
-        $('x-status').textContent = 'Done ✅ Output: ' + s3path;
-      } else if (j.data.status === 'error') {
-        $('x-status').textContent = 'Failed ❌ ' + (j.data.message || '');
-      } else {
-        setTimeout(poll, 1500);
+  document.addEventListener('DOMContentLoaded', () => {
+    const $ = (id) => document.getElementById(id);
+  
+    // ...keep the rest of your code...
+  
+    const btn = $('btn-upload');
+    const fileInput = $('file');
+    const out  = $('out');
+  
+    btn?.addEventListener('click', async (e) => {
+      e.preventDefault();
+      out.textContent = '';
+  
+      try {
+        const tok = localStorage.getItem('idToken');
+        if (!tok) throw new Error('Not logged in');
+  
+        const file = fileInput?.files?.[0];
+        if (!file) throw new Error('Pick a file first');
+  
+        btn.disabled = true;
+        const label = btn.textContent;
+        btn.textContent = 'Uploading…';
+  
+        // 1) Ask server for a presigned PUT URL
+        const r1 = await fetch('/api/v1/upload-url', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok },
+          body: JSON.stringify({
+            filename: file.name,
+            contentType: file.type || 'application/octet-stream'   // <-- important
+          })
+        });
+        const j1 = await r1.json().catch(()=>({}));
+        if (!r1.ok || j1.success === false) {
+          throw new Error(j1?.error?.message || r1.statusText || 'upload-url failed');
+        }
+        const { putUrl, assetId, key } = j1.data;
+  
+        // 2) Upload the file directly to S3 with the presigned URL
+        const r2 = await fetch(putUrl, {
+          method: 'PUT',
+          headers: { 'Content-Type': file.type || 'application/octet-stream' },
+          body: file
+        });
+        if (!r2.ok) {
+          const t = await r2.text().catch(()=> '');
+          throw new Error('S3 PUT failed: ' + r2.status + ' ' + t.slice(0,160));
+        }
+  
+        // 3) Tell server the upload is complete so it can flip DynamoDB status
+        const r3 = await fetch('/api/v1/upload-complete', {
+          method: 'POST',
+          headers: { 'Content-Type':'application/json', 'Authorization':'Bearer ' + tok },
+          body: JSON.stringify({ assetId })
+        });
+        const j3 = await r3.json().catch(()=>({}));
+        if (!r3.ok || j3.success === false) {
+          throw new Error(j3?.error?.message || r3.statusText || 'upload-complete failed');
+        }
+  
+        out.textContent = 'Upload ok\n' + JSON.stringify({ assetId, key }, null, 2);
+  
+        // Continue the demo: reveal transcode panel by reloading with ?asset=
+        window.location.replace('/app.html?asset=' + encodeURIComponent(assetId));
+  
+        btn.textContent = label;
+        btn.disabled = false;
+      } catch (err) {
+        out.textContent = 'Upload failed: ' + (err?.message || err);
+        console.error(err);
+        btn.textContent = 'Upload';
+        btn.disabled = false;
       }
-    };
-    setTimeout(poll, 1200);
-  }
-
-  ['360','720','1080'].forEach(h => $('p-' + h)?.addEventListener('click', () => startTranscode(h)));
-
-  // copy + logout
-  $('btn-copy')?.addEventListener('click', async () => {
-    const id = localStorage.getItem('idToken') || '';
-    if (!id) return alert('No token in storage');
-    await navigator.clipboard.writeText(id);
-    alert('ID token copied');
+    });
   });
-  $('btn-logout')?.addEventListener('click', () => {
-    localStorage.removeItem('idToken');
-    setStatus('Not logged in');
-  });
-});
-</script>
+  </script>
+  
 </body>
 </html>
