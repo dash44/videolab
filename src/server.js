@@ -180,6 +180,7 @@ app.post('/api/v1/upload-url', requireAuth, express.json(), async (req, res) => 
             createdAt: now,
             s3Bucket: BUCKET_UPLOADS,
             s3Key: key,
+            outputs: {},
             }
         }));
     
@@ -274,8 +275,8 @@ app.post("/api/v1/transcode", requireAuth, async (req, res) => {
             Key: { jobId },
             UpdateExpression: "SET #s = :s, startedAt = :t",
             ExpressionAttributeNames: { "#s": "status" },
-            ExpressionAttributeValues: { ":s": "running", ":t": Date.now() },
-          })
+            ExpressionAttributeValues: { ":s": "running", ":t": new Date().toISOString() },
+        })
         );
         jobsMem.set(jobId, { status: "running", preset, assetId });
 
@@ -296,37 +297,35 @@ app.post("/api/v1/transcode", requireAuth, async (req, res) => {
             Key: { jobId },
             UpdateExpression: "SET #s = :s, finishedAt = :t, outputKey = :o",
             ExpressionAttributeNames: { "#s": "status" },
-            ExpressionAttributeValues: { ":s": "complete", ":t": Date.now(), ":o": outKey },
-          })
+            ExpressionAttributeValues: { ":s": "complete", ":t": new Date().toISOString(), ":o": outKey },
+        })
         );
         jobsMem.set(jobId, { status: "complete", outputPath: `/s3/${BUCKET_OUTPUTS}/${outKey}` });
 
         // patch the video item with outputs map and status
-        await ddbc.send(
-          new UpdateCommand({
+        await ddbc.send(new UpdateCommand({
             TableName: DDB_TABLE_VIDEOS,
             Key: { assetId },
-            UpdateExpression:
-              "SET #out.#p = :k, #st = :st",
+            UpdateExpression: 'SET #out = if_not_exists(#out, :empty), #out.#p = :k, #st = :st',
             ExpressionAttributeNames: {
-              "#out": "outputs",
-              "#p": preset,
-              "#st": "status",
+                '#out': 'outputs',
+                '#p': preset.toString(),  // ensure attribute name is a string
+                '#st': 'status',
             },
             ExpressionAttributeValues: {
-              ":k": outKey,
-              ":st": "ready",
+                ':empty': {},
+                ':k': outKey,
+                ':st': 'ready',
             },
-          })
-        );
-      } catch (err) {
+        }));
+    } catch (err) {
         console.error("transcode err:", err);
         await ddbc.send(
           new UpdateCommand({
             TableName: DDB_TABLE_JOBS,
             Key: { jobId },
-            UpdateExpression: "SET #s = :s, error = :e",
-            ExpressionAttributeNames: { "#s": "status" },
+            UpdateExpression: "SET #s = :s, #err = :e",
+            ExpressionAttributeNames: { "#s": "status", "#err": "error" },
             ExpressionAttributeValues: { ":s": "error", ":e": String(err?.message || err) },
           })
         );
