@@ -24,32 +24,42 @@ Overview
 
 ### Core - First data persistence service
 
-- **AWS service name:**  [eg. S3]
-- **What data is being stored?:** [eg video files]
-- **Why is this service suited to this data?:** [eg. large files are best suited to blob storage due to size restrictions on other services]
-- **Why is are the other services used not suitable for this data?:**
+- **AWS service name:**  S3
+- **What data is being stored?:** Original uploads and processed outputs (video files/mp4 objects)
+- **Why is this service suited to this data?:** S3 is durable, scalable object storage optimaised for large binary blobs with simple key access and lifecycle control. Ideal for video assets.
+- **Why is are the other services used not suitable for this data?:** DynamoDB/RDS are for structured or relational data, not large binaries.
 - **Bucket/instance/table name:**
-- **Video timestamp:**
+    - Uploads: **a2-group103-uploads**
+    - Outputs: **a2-group103-outputs**
+- **Video timestamp:** 0:11 - 1:11
 - **Relevant files:**
-    -
+    - `src/server.js`
+    - `public/app.html`
 
 ### Core - Second data persistence service
 
-- **AWS service name:**  [eg. DynamoDB]
+- **AWS service name:**  DynamoDB
 - **What data is being stored?:** 
-- **Why is this service suited to this data?:**
+    - **Videos table:** asset metadata (assetId, ownerSub, preset, status, timestamps, outputKey)
+    - **Jobs table:** async job records (jobId, videoId, ownerSub, originalName, s3Bucket/s3Key, status, createdAt, outputs map)
+- **Why is this service suited to this data?:** Flexible schema, cheap per item storage and a GSI to list a users videos by owner.
 - **Why is are the other services used not suitable for this data?:**
+    - S3 cannot perform key condition queries over attributes
+    - RDS adds operational overhead for simple key/value style lookups
 - **Bucket/instance/table name:**
-- **Video timestamp:**
-- **Relevant files:**
-    -
+    - Videos: **a2-group103-videoTable** (PK: assetId; **GSI: `ByOwner`** with PK: `ownerSub`, SK: `createdAt` (String/ISO)))
+    - Jobs: **a2-group103-jobTable** (PK: `jobId`)
+- **Video timestamp:** 1:11 - 1:41, 2:16 - 3:59
+- **Relevant files:** 
+    - `src/server.js`
+
 
 ### Third data service
 
-- **AWS service name:**  [eg. RDS]
-- **What data is being stored?:** [eg video metadata]
-- **Why is this service suited to this data?:** [eg. ]
-- **Why is are the other services used not suitable for this data?:** [eg. Advanced video search requires complex querries which are not available on S3 and inefficient on DynamoDB]
+- **AWS service name:**  NA
+- **What data is being stored?:** NA
+- **Why is this service suited to this data?:** NA
+- **Why is are the other services used not suitable for this data?:** 
 - **Bucket/instance/table name:**
 - **Video timestamp:**
 - **Relevant files:**
@@ -57,18 +67,21 @@ Overview
 
 ### S3 Pre-signed URLs
 
-- **S3 Bucket names:**
-- **Video timestamp:**
+- **S3 Bucket names:** 
+    - **a2-group103-uploads** pre signed PUT
+    - **a2-group103-outputs** server writes via copy
+- **Video timestamp:** 1:41 - 2:16, 2:54 - 3:04
 - **Relevant files:**
-    - src/controllers/assets.controller.js
+    - `src/server.js` - `/api/v1/upload-url` creates pre-signed PUT; `/api/v1/upload-complete` marks uploaded 
+    - `public/app.html` - JS calls to request URL then `fetch(putUrl, { method:'PUT', body:file })`
 
 ### In-memory cache
 
-- **ElastiCache instance name:**
-- **What data is being cached?:** [eg. Thumbnails from YouTube videos obatined from external API]
-- **Why is this data likely to be accessed frequently?:** [ eg. Thumbnails from popular YouTube videos are likely to be shown to multiple users ]
-- **Video timestamp:**
-- **Relevant files:**
+- **ElastiCache instance name:** NA
+- **What data is being cached?:** NA
+- **Why is this data likely to be accessed frequently?:** NA
+- **Video timestamp:** 
+- **Relevant files:** 
     -
 
 ### Core - Statelessness
@@ -83,11 +96,7 @@ Overview
     - Job metadata in DynamoDB tracks processing status such as queued, running, done, and error. If the app crashes during processing, the job remains in running state and can be re-queued or retried by checking DynamoDB for incomplete jobs. Intermediate files on the local filesystem are ephemeral; any missing variants can be regenerated from the source stored in S3.
 
 - **Relevant files:**
-    - src/aws/dynamo.js
-    - src/aws/s3.js
-    - src/controllers/jobs.controller.js
-    - src/controllers/assets.controller.js
-    - src/services/video.service.js
+    - `src/server.js` - `jobsMem` fallback in `/api/v1/jobs/:id`; temp file removal after S3 upload
 
 ### Graceful handling of persistent connections
 
@@ -104,61 +113,59 @@ Overview
 
 ### Core - Authentication with Cognito
 
-- **User pool name:** ap-southeast-2_OnwWuh1EX
+- **User pool name:** ap-southeast-2_OnwWuh1EX - App Client Name: a2-group103-appclient, App Client ID: 7auhqbvug0j4fq7j5e3dp04ch0
 - **How are authentication tokens handled by the client?:** 
 - After successfully logging in, the client receives an ID token, access token, and refresh token from Cognito. These tokens are currently stored on the client side. The ID token is then attatched as a Bearer token in the Authorisation header when making API requests.
 
-- **Video timestamp:**
+- **Video timestamp:** 3:48 - 5:24
 - **Relevant files:**
-    - src/middleware/auth.js
-    - src/controllers/auth.controller.js
-    - src/routes/auth.routes.js
-    - src/schemas/auth.schema.js
-    - src/services/signUp.js
+    - `src/routes/auth.routes.js` - register, confirm, login
+    - `src/server.js` - requireAuth
+    - `public/index.html` - signup/login UI
+    - `public/app.html` - uses token, logout redirect
 
 ### Cognito multi-factor authentication
 
-- **What factors are used for authentication:** [eg. password, SMS code]
+- **What factors are used for authentication:** NA
 - **Video timestamp:**
 - **Relevant files:**
     -
 
 ### Cognito federated identities
 
-- **Identity providers used:**
+- **Identity providers used:** NA
 - **Video timestamp:**
 - **Relevant files:**
     -
 
 ### Cognito groups
 
-- **How are groups used to set permissions?:** [eg. 'admin' users can delete and ban other users]
+- **How are groups used to set permissions?:** NA
 - **Video timestamp:**
 - **Relevant files:**
     -
 
 ### Core - DNS with Route53
 
-- **Subdomain**:  a2-n11159677.cab432.com
-- **Video timestamp:**
+- **Subdomain**:  a2-group103.cab432.com
+- **Video timestamp:** 5:24 - 6:03
 
 ### Parameter store
 
-- **Parameter names:** /videolab/ ?
+- **Parameter names:** NA
 - **Video timestamp:**
 - **Relevant files:**
-    - src/aws/ssm.js
 
 ### Secrets manager
 
-- **Secrets names:** [eg. n1234567-youtube-api-key]
-- **Video timestamp:**
+- **Secrets names:** a2-group103-secret
+- **Video timestamp:** 6:30 - 6:49
 - **Relevant files:**
-    - src/aws/secrets.js
+    - `src/server.js`
 
 ### Infrastructure as code
 
-- **Technology used:**
+- **Technology used:** NA
 - **Services deployed:**
 - **Video timestamp:**
 - **Relevant files:**
@@ -166,14 +173,14 @@ Overview
 
 ### Other (with prior approval only)
 
-- **Description:**
+- **Description:** NA
 - **Video timestamp:**
 - **Relevant files:**
     -
 
 ### Other (with prior permission only)
 
-- **Description:**
+- **Description:** NA
 - **Video timestamp:**
 - **Relevant files:**
     -
