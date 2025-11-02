@@ -5,4 +5,5 @@ outputs
 *.db
 data.json
 videolab-a2-group103.zip
+.env.local
 

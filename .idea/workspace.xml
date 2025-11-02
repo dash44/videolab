@@ -101,7 +101,7 @@
       <workItem from="1756519283955" duration="23889000" />
       <workItem from="1756597608139" duration="18742000" />
       <workItem from="1756624286750" duration="14159000" />
-      <workItem from="1762058423142" duration="1797000" />
+      <workItem from="1762058423142" duration="8204000" />
     </task>
     <task id="LOCAL-00001" summary="config.js">
       <option name="closed" value="true" />
@@ -292,6 +292,9 @@
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
+  </component>
+  <component name="UnknownFeatures">
+    <option featureType="com.intellij.fileTypeFactory" implementationName=".env" />
   </component>
   <component name="VcsManagerConfiguration">
     <MESSAGE value="config.js" />

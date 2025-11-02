@@ -1,71 +1,75 @@
-import { tmpdir } from 'os';
-import { join } from 'path';
-import { randomUUID } from 'crypto';
-import { log, err } from './utils/logger.js';
-import { config } from './utils/config.js';
-import { receiveOne, del } from './aws/sqs.js';
-import { downloadToFile, uploadFromFile } from './aws/s3.js';
-import { setJobStatus } from './aws/dynamo.js';
-import { runFfmpeg } from './processor/ffmpeg.js';
-import { rm } from 'fs/promises';
+import "dotenv/config";
+import { SQSClient, ReceiveMessageCommand, DeleteMessageCommand } from "@aws-sdk/client-sqs";
+import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
+import { DynamoDBDocumentClient, UpdateCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
+import { transcodeTo720p } from "../src/services/video.service.js";
 
-async function handle(msg) {
+const region = process.env.AWS_REGION || "ap-southeast-2";
+const sqs = new SQSClient({ region });
+const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({ region }));
+
+const QUEUE_URL = process.env.SQS_QUEUE_URL;
+const TABLE = process.env.DDB_TABLE;
+
+async function handleMessage(msg) {
     const body = JSON.parse(msg.Body);
-    const { jobId, inputKey, preset } = body;
+    const { jobId, inputKey } = body;
 
-    const inPath = join(tmpdir(), `${randomUUID()}-in`);
-    const outBase = `${jobId}-${preset}.mp4`;
-    const outPath = join(tmpdir(), outBase);
+    // mark started
+    await ddb.send(new PutCommand({
+        TableName: TABLE,
+        Item: { jobId, status: "STARTED", startedAt: Date.now(), inputKey }
+    }));
 
     try {
-        await setJobStatus(jobId, { status: 'PROCESSING' });
-
-        // 1) download from uploads
-        await downloadToFile(inputKey, inPath);
-
-        // 2) ffmpeg transform
-        const producedName = await runFfmpeg(preset, inPath, outPath);
-
-        // 3) upload to outputs bucket
-        const finalKey = `outputs/${producedName}`;
-        const contentType =
-            preset === 'thumbnail' ? 'image/jpeg' :
-                preset === 'audio' ? 'audio/mp4' : 'video/mp4';
-
-        await uploadFromFile(finalKey, preset === 'thumbnail' ? outPath.replace(/\.mp4$/i,'.jpg')
-                : preset === 'audio' ? outPath.replace(/\.mp4$/i,'.m4a')
-                    : outPath,
-            contentType);
-
-        // 4) update job
-        await setJobStatus(jobId, { status: 'COMPLETED', outputKey: finalKey, error: null });
-
-        log('done', { jobId, finalKey });
-    } catch (e) {
-        err('failed', jobId, e);
-        await setJobStatus(jobId, { status: 'FAILED', error: String(e) });
-    } finally {
-        try { await rm(inPath, { force: true }); } catch {}
-        try { await rm(outPath, { force: true }); } catch {}
+        const { outputKey } = await transcodeTo720p({ inputKey });
+        await ddb.send(new UpdateCommand({
+            TableName: TABLE,
+            Key: { jobId },
+            UpdateExpression: "set #s=:s, outputKey=:o, finishedAt=:t",
+            ExpressionAttributeNames: { "#s": "status" },
+            ExpressionAttributeValues: { ":s": "DONE", ":o": outputKey, ":t": Date.now() },
+        }));
+    } catch (err) {
+        await ddb.send(new UpdateCommand({
+            TableName: TABLE,
+            Key: { jobId },
+            UpdateExpression: "set #s=:s, error=:e, finishedAt=:t",
+            ExpressionAttributeNames: { "#s": "status" },
+            ExpressionAttributeValues: { ":s": "FAILED", ":e": String(err), ":t": Date.now() },
+        }));
+        throw err;
     }
 }
 
 async function loop() {
-    if (!config.queueUrl || !config.ddbTable || !config.uploadsBucket || !config.outputsBucket) {
-        throw new Error('Missing one of SQS_QUEUE_URL, DDB_TABLE, UPLOADS_BUCKET, OUTPUTS_BUCKET');
-    }
+    if (!QUEUE_URL) throw new Error("SQS_QUEUE_URL missing");
+    for (;;) {
+        const res = await sqs.send(new ReceiveMessageCommand({
+            QueueUrl: QUEUE_URL,
+            MaxNumberOfMessages: 1,
+            WaitTimeSeconds: 10,
+            VisibilityTimeout: 120,
+        }));
 
-    log('listening on', config.queueUrl);
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-        const m = await receiveOne();
-        if (!m) continue;
-        await handle(m).catch(err);
-        await del(m).catch(err);
+        if (!res.Messages || res.Messages.length === 0) continue;
+
+        for (const m of res.Messages) {
+            try {
+                await handleMessage(m);
+                await sqs.send(new DeleteMessageCommand({
+                    QueueUrl: QUEUE_URL,
+                    ReceiptHandle: m.ReceiptHandle
+                }));
+            } catch (e) {
+                console.error("Job failed:", e);
+                // let SQS retry; after MaxReceiveCount it goes to DLQ
+            }
+        }
     }
 }
 
 loop().catch(e => {
-    err('fatal', e);
+    console.error(e);
     process.exit(1);
 });

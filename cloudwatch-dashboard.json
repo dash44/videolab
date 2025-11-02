@@ -1,0 +1,39 @@
+{
+  "widgets": [
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 0,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "SQS queue health",
+        "region": "ap-southeast-2",
+        "view": "timeSeries",
+        "stat": "Average",
+        "period": 60,
+        "metrics": [
+          ["AWS/SQS","ApproximateNumberOfMessagesVisible","QueueName","a3-n11772671-queue"],
+          ["AWS/SQS","ApproximateAgeOfOldestMessage","QueueName","a3-n11772671-queue"]
+        ]
+      }
+    },
+    {
+      "type": "metric",
+      "x": 12,
+      "y": 0,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "EC2 CPU Utilization",
+        "region": "ap-southeast-2",
+        "view": "timeSeries",
+        "stat": "Average",
+        "period": 60,
+        "metrics": [
+          ["AWS/EC2","CPUUtilization","InstanceId","i-079f1b0fdbf297e76"]
+        ]
+      }
+    }
+  ]
+}

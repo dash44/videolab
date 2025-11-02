@@ -1,14 +1,11 @@
 services:
-  photolab:
-    build: .
-    image: videolab:2.0
-    ports: ["8080:8080"]
+  localstack:
+    image: localstack/localstack:2.3
+    ports:
+      - "4566:4566"
     environment:
-      - NODE_ENV=production
-      - PORT=8080
-      - JWT_SECRET=${JWT_SECRET:-supersecret}
-      - LOG_LEVEL=info
+      - SERVICES=s3,sqs,dynamodb
+      - AWS_DEFAULT_REGION=ap-southeast-2
+      - DEBUG=0
     volumes:
-      - ./uploads:/app/uploads
-      - ./outputs:/app/outputs
-
+      - "./.localstack:/var/lib/localstack"

@@ -1,46 +1,63 @@
-import { nanoid } from 'nanoid';
-import { sendJobMessage } from '../aws/sqs.js';
-import { putJob, getJob } from '../aws/dynamo.js';
-import { config } from '../utils/config.js';
+import { mkdirSync, existsSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { S3Client, GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
+import { pipeline } from "node:stream/promises";
+import { createWriteStream, createReadStream } from "node:fs";
+import path from "node:path";
 
-/**
- * Creates and queues a new video transformation job.
- * @param {string} inputKey - S3 key of the uploaded source video.
- * @param {string} preset - Transformation preset (720p, 480p, audio, thumbnail).
- * @returns {Promise<{ jobId: string, status: string, preset: string }>}
- */
-export async function createVideoJob(inputKey, preset = '720p') {
-    if (!inputKey) throw new Error('inputKey required');
-    const jobId = nanoid();
-    const now = new Date().toISOString();
+const s3 = new S3Client({ region: process.env.AWS_REGION || "ap-southeast-2" });
+const UPLOADS_BUCKET = process.env.UPLOADS_BUCKET;
+const OUTPUTS_BUCKET = process.env.OUTPUTS_BUCKET;
 
-    const job = {
-        jobId,
-        inputKey,
-        preset,
-        status: 'QUEUED',
-        createdAt: now,
-        updatedAt: now,
-        outputKey: null,
-        error: null,
-    };
+function ensureTmp() {
+    const dir = "/tmp/videolab";
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    return dir;
+}
 
-    // Store in DynamoDB
-    await putJob(job);
+async function downloadFromS3(key, toPath) {
+    const res = await s3.send(new GetObjectCommand({ Bucket: UPLOADS_BUCKET, Key: key }));
+    await pipeline(res.Body, createWriteStream(toPath));
+}
 
-    // Send SQS message for worker
-    await sendJobMessage({ jobId, inputKey, preset, outputsBucket: config.outputsBucket });
-
-    return { jobId, status: job.status, preset };
+async function uploadToS3(fromPath, outKey) {
+    const Body = createReadStream(fromPath);
+    await s3.send(new PutObjectCommand({ Bucket: OUTPUTS_BUCKET, Key: outKey, Body, ContentType: "video/mp4" }));
 }
 
 /**
- * Gets job information from DynamoDB.
- * @param {string} jobId - Job ID to fetch.
- * @returns {Promise<object>} - Job item.
+ * Transcode to 720p MP4 using ffmpeg.
+ * Requires ffmpeg installed on the instance (A2 image usually has it; if not: sudo apt-get install -y ffmpeg)
  */
-export async function getVideoJob(jobId) {
-    const result = await getJob(jobId);
-    if (!result.Item) throw new Error('Job not found');
-    return result.Item;
+export async function transcodeTo720p({ inputKey }) {
+    const tmp = ensureTmp();
+    const inputPath = path.join(tmp, "input.mp4");
+    const outputPath = path.join(tmp, "output.mp4");
+
+    // 1) Download
+    await downloadFromS3(inputKey, inputPath);
+
+    // 2) Run ffmpeg
+    await new Promise((resolve, reject) => {
+        const args = [
+            "-y",
+            "-i", inputPath,
+            "-vf", "scale=-2:720",
+            "-c:v", "libx264",
+            "-preset", "veryfast",
+            "-crf", "23",
+            "-c:a", "aac",
+            "-b:a", "128k",
+            outputPath,
+        ];
+        const proc = spawn("ffmpeg", args, { stdio: "inherit" });
+        proc.on("exit", (code) => code === 0 ? resolve() : reject(new Error("ffmpeg failed")));
+    });
+
+    // 3) Upload
+    const base = inputKey.replace(/\.[^/.]+$/, "");
+    const outKey = `${base}-720p.mp4`;
+    await uploadToS3(outputPath, outKey);
+
+    return { outputKey: outKey };
 }

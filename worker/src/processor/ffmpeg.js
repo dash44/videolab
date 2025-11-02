@@ -1,5 +1,5 @@
 import { spawn } from 'child_process';
-import { err, log } from '../utils/logger.js';
+import { log } from '../utils/logger.js';
 
 function argsForPreset(preset, inputPath, outputPath) {
     switch (preset) {
@@ -31,4 +31,8 @@ export async function runFfmpeg(preset, inputPath, outputPath) {
     if (preset === 'audio') return outputPath.replace(/^.*\//,'').replace(/\.mp4$/i,'.m4a');
     if (preset === 'thumbnail') return outputPath.replace(/^.*\//,'').replace(/\.mp4$/i,'.jpg');
     return outputPath.replace(/^.*\//,'');
+}
+
+export async function transcodeTo720p(inputPath, outputPath) {
+    return runFfmpeg('720p', inputPath, outputPath);
 }
