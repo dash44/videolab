@@ -27,7 +27,7 @@ async function uploadToS3(fromPath, outKey) {
 
 /**
  * Transcode to 720p MP4 using ffmpeg.
- * Requires ffmpeg installed on the instance (A2 image usually has it; if not: sudo apt-get install -y ffmpeg)
+ * Requires ffmpeg installed on the instance
  */
 export async function transcodeTo720p({ inputKey }) {
     const tmp = ensureTmp();

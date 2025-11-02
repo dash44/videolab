@@ -2,7 +2,7 @@ import "dotenv/config";
 import { SQSClient, ReceiveMessageCommand, DeleteMessageCommand } from "@aws-sdk/client-sqs";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, UpdateCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
-import { transcodeTo720p } from "../src/services/video.service.js";
+import { transcodeTo720p } from "../../src/services/video.service.js";
 
 const region = process.env.AWS_REGION || "ap-southeast-2";
 const sqs = new SQSClient({ region });
