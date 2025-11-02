@@ -1,28 +1,18 @@
-import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { config } from '../utils/config.js';
 
-const region = process.env.AWS_REGION || "ap-southeast-2";
-export const s3 = new S3Client({ region });
+const s3 = new S3Client({ region: config.region });
 
-export async function presignPut({ bucket, key, contentType, expiresSeconds = 900 }) {
-    const cmd = new PutObjectCommand({ 
-        Bucket: bucket, 
+export const presignPut = async (key, contentType) =>
+    getSignedUrl(s3, new PutObjectCommand({
+        Bucket: config.uploadsBucket,
         Key: key,
-        ...(contentType ? { ContentType: contentType } : {}) 
-    });
-    return getSignedUrl(s3, cmd, { expiresIn: expiresSeconds });
-}
+        ContentType: contentType
+    }), { expiresIn: 900 });
 
-export async function presignGet({ 
-    bucket, 
-    key, 
-    expiresSeconds = 900,
-    responseContentDisposition 
-}) {
-    const cmd = new GetObjectCommand({ 
-        Bucket: bucket, 
-        Key: key,
-        ...(responseContentDisposition ? { ResponseContentDisposition: responseContentDisposition } : {}) 
-    });
-    return getSignedUrl(s3, cmd, { expiresIn: expiresSeconds });
-}
+export const presignGet = async (key) =>
+    getSignedUrl(s3, new GetObjectCommand({
+        Bucket: config.outputsBucket,
+        Key: key
+    }), { expiresIn: 900 });

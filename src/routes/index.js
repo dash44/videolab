@@ -1,12 +1,10 @@
-import { Router } from 'express';
-import authRoutes from './auth.routes.js';
+import express from 'express';
 import assetsRoutes from './assets.routes.js';
 import jobsRoutes from './jobs.routes.js';
 
-const r = Router();
+const router = express.Router();
 
-r.use('/auth', authRoutes);
-r.use('/assets', assetsRoutes);
-r.use('/jobs', jobsRoutes);
+router.use('/assets', assetsRoutes);
+router.use('/jobs', jobsRoutes);
 
-export default r;
+export default router;
