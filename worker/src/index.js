@@ -6,7 +6,10 @@ import { transcodeTo720p } from "../../src/services/video.service.js";
 
 const region = process.env.AWS_REGION || "ap-southeast-2";
 const sqs = new SQSClient({ region });
-const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({ region }));
+
+/** @type {import("@aws-sdk/client-dynamodb").DynamoDBClientConfig} */
+const ddbConfig = { region };
+const ddb = DynamoDBDocumentClient.from(new DynamoDBClient(ddbConfig));
 
 const QUEUE_URL = process.env.SQS_QUEUE_URL;
 const TABLE = process.env.DDB_TABLE;
@@ -14,15 +17,15 @@ const TABLE = process.env.DDB_TABLE;
 async function handleMessage(msg) {
     let body;
     try {
-        body = JSON.parse(msg.Body);
-    } catch (e) {
-        console.warn('Skipping non-JSON message:', msg.Body);
+        body = JSON.parse(msg.Body || "{}");
+    } catch {
+        console.warn("Skipping bad JSON:", msg.Body);
         return { skipped: true };
     }
 
-    const { jobId, inputKey } = body || {};
+    const { jobId, inputKey } = body;
     if (!jobId || !inputKey) {
-        console.warn('Skipping bad message (missing jobId or inputKey):', body);
+        console.warn("Skipping bad message (missing jobId or inputKey):", body);
         return { skipped: true };
     }
 
@@ -39,15 +42,16 @@ async function handleMessage(msg) {
             Key: { jobId },
             UpdateExpression: "set #s=:s, outputKey=:o, finishedAt=:t",
             ExpressionAttributeNames: { "#s": "status" },
-            ExpressionAttributeValues: { ":s": "DONE", ":o": outputKey, ":t": Date.now() },
+            ExpressionAttributeValues: { ":s": "DONE", ":o": outputKey, ":t": Date.now() }
         }));
     } catch (err) {
         await ddb.send(new UpdateCommand({
             TableName: TABLE,
             Key: { jobId },
+            // alias reserved "error"
             UpdateExpression: "set #s=:s, #err=:e, finishedAt=:t",
             ExpressionAttributeNames: { "#s": "status", "#err": "error" },
-            ExpressionAttributeValues: { ":s": "FAILED", ":e": String(err), ":t": Date.now() },
+            ExpressionAttributeValues: { ":s": "FAILED", ":e": String(err), ":t": Date.now() }
         }));
         throw err;
     }
@@ -55,12 +59,12 @@ async function handleMessage(msg) {
 
 async function loop() {
     if (!QUEUE_URL) throw new Error("SQS_QUEUE_URL missing");
-    while (true) {
+    for (;;) {
         const res = await sqs.send(new ReceiveMessageCommand({
             QueueUrl: QUEUE_URL,
             MaxNumberOfMessages: 1,
             WaitTimeSeconds: 10,
-            VisibilityTimeout: 120,
+            VisibilityTimeout: 120
         }));
 
         if (!res.Messages || res.Messages.length === 0) continue;
