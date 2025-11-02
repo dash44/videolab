@@ -12,8 +12,19 @@ const QUEUE_URL = process.env.SQS_QUEUE_URL;
 const TABLE = process.env.DDB_TABLE;
 
 async function handleMessage(msg) {
-    const body = JSON.parse(msg.Body);
-    const { jobId, inputKey } = body;
+    let body;
+    try {
+        body = JSON.parse(msg.Body);
+    } catch (e) {
+        console.warn('Skipping non-JSON message:', msg.Body);
+        return { skipped: true };
+    }
+
+    const { jobId, inputKey } = body || {};
+    if (!jobId || !inputKey) {
+        console.warn('Skipping bad message (missing jobId or inputKey):', body);
+        return { skipped: true };
+    }
 
     // mark started
     await ddb.send(new PutCommand({
@@ -34,8 +45,8 @@ async function handleMessage(msg) {
         await ddb.send(new UpdateCommand({
             TableName: TABLE,
             Key: { jobId },
-            UpdateExpression: "set #s=:s, error=:e, finishedAt=:t",
-            ExpressionAttributeNames: { "#s": "status" },
+            UpdateExpression: "set #s=:s, #err=:e, finishedAt=:t",
+            ExpressionAttributeNames: { "#s": "status", "#err": "error" },
             ExpressionAttributeValues: { ":s": "FAILED", ":e": String(err), ":t": Date.now() },
         }));
         throw err;
@@ -44,7 +55,7 @@ async function handleMessage(msg) {
 
 async function loop() {
     if (!QUEUE_URL) throw new Error("SQS_QUEUE_URL missing");
-    for (;;) {
+    while (true) {
         const res = await sqs.send(new ReceiveMessageCommand({
             QueueUrl: QUEUE_URL,
             MaxNumberOfMessages: 1,
