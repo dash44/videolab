@@ -34,6 +34,10 @@
     "accountId": "62b2bb76-030b-4e4a-ba0e-90437bc6ffe4"
   }
 }]]></component>
+  <component name="KubernetesApiPersistence"><![CDATA[{}]]></component>
+  <component name="KubernetesApiProvider"><![CDATA[{
+  "isMigrated": true
+}]]></component>
   <component name="ProjectColorInfo">{
   &quot;associatedIndex&quot;: 4
 }</component>
@@ -101,7 +105,7 @@
       <workItem from="1756519283955" duration="23889000" />
       <workItem from="1756597608139" duration="18742000" />
       <workItem from="1756624286750" duration="14159000" />
-      <workItem from="1762058423142" duration="14504000" />
+      <workItem from="1762058423142" duration="21911000" />
     </task>
     <task id="LOCAL-00001" summary="config.js">
       <option name="closed" value="true" />

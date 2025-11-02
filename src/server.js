@@ -48,9 +48,7 @@ app.post("/jobs", async (req, res) => {
         // Send to SQS
         await sqs.send(new SendMessageCommand({
             QueueUrl: SQS_QUEUE_URL,
-            MessageBody: JSON.stringify({ jobId, key }),
-            MessageGroupId: "videolab", // OK for standard; harmless on FIFO off
-            MessageDeduplicationId: jobId // ignored on Standard queues
+            MessageBody: JSON.stringify({ jobId, inputKey: key })
         }));
 
         res.status(202).json({ jobId, status: "queued" });
